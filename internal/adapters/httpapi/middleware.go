@@ -221,6 +221,22 @@ func (s *Server) requirePerm(perm string) func(http.Handler) http.Handler {
 	}
 }
 
+// requireAnyPerm: basta con uno de los permisos (el SP decide cuál aplica según el recurso).
+func (s *Server) requireAnyPerm(perms ...string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			p := principal(r)
+			for _, perm := range perms {
+				if p != nil && p.Has(perm) {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+			s.writeErr(w, r, domain.ErrForbidden)
+		})
+	}
+}
+
 // requireTenantUser: endpoints /tenant/* solo para usuarios que pertenecen a un tenant.
 func (s *Server) requireTenantUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -28,6 +28,7 @@ type Deps struct {
 	Masters       *app.MasterService
 	Files         *app.FileService
 	Notifications *app.NotificationService
+	Catalogs      *app.CatalogService
 	Features      *app.FeatureService
 	Versions      *app.VersionService
 	Support       *app.SupportService
@@ -93,7 +94,8 @@ func (s *Server) Handler() http.Handler {
 				r.With(s.requirePerm("tenant.branding.manage")).Put("/branding", s.updateBranding)
 				r.With(s.requirePerm("tenant.branding.manage")).Post("/branding/files/{kind}", s.uploadBrandingFile)
 				r.With(s.requirePerm("tenant.branding.manage")).Put("/branding/cv", s.updateCVTemplate)
-				r.With(s.requirePerm("tenant.masters.manage")).Put("/masters/items", s.upsertMasterItem)
+				// maestros propios del tenant o catálogos compartidos con BDT (el SP exige el permiso de cada catálogo)
+				r.With(s.requireAnyPerm("tenant.masters.manage", "catalog.manage")).Put("/masters/items", s.upsertMasterItem)
 				r.With(s.requirePerm("tenant.users.manage")).Get("/users", s.listUsers)
 				r.With(s.requirePerm("tenant.users.manage")).Patch("/users/{id}/status", s.setUserStatus)
 				r.With(s.requirePerm("tenant.users.invite")).Get("/invitations", s.listInvitations)
@@ -105,6 +107,7 @@ func (s *Server) Handler() http.Handler {
 				r.With(s.requirePerm("tenant.translations.manage")).Put("/translations", s.upsertTranslation)
 				r.With(s.requirePerm("tenant.audit.read")).Get("/audit", s.listAudit)
 				r.Group(s.notificationRoutes)
+				r.Group(s.catalogRoutes)
 			})
 
 			// Plataforma (Super Admin)
@@ -136,6 +139,7 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/openapi.json", s.openAPISpec)
 		r.Get("/whoami", s.integrationWhoAmI)
 		r.With(s.requireScope("masters.read")).Get("/masters", s.integrationMasters)
+		r.With(s.requireScope("masters.read")).Get("/catalog/changes", s.integrationCatalogChanges)
 	})
 	return r
 }

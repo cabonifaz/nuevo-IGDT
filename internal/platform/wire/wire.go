@@ -75,6 +75,7 @@ func Build(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, erro
 		Masters:       &app.MasterService{Repo: mysql.MasterRepo{Store: store}},
 		Files:         &app.FileService{Repo: fileRepo, Storage: files, Tenants: tenantRepo},
 		Notifications: notifications,
+		Catalogs:      &app.CatalogService{Repo: mysql.CatalogRepo{Store: store}},
 		Features:      features,
 		Versions:      versions,
 		Support:       &app.SupportService{Repo: mysql.SupportRepo{Store: store}, Cipher: cipher, Storage: files, Notifier: notifications},

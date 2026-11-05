@@ -653,13 +653,15 @@ BEGIN
   DECLARE v_parent BIGINT UNSIGNED;
   DECLARE v_item_id BIGINT UNSIGNED;
   DECLARE v_item_tenant BIGINT UNSIGNED;
-  SELECT id, scope, is_system INTO v_table_id, v_scope, v_system FROM master_table WHERE code = p_table_code AND deleted_at IS NULL;
+  DECLARE v_shared TINYINT(1);
+  SELECT id, scope, is_system, shared INTO v_table_id, v_scope, v_system, v_shared FROM master_table WHERE code = p_table_code AND deleted_at IS NULL;
   IF v_table_id IS NULL THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:NOT_FOUND'; END IF;
   IF p_tenant_id IS NULL THEN
     CALL sp_assert_actor(p_actor_id, NULL, 'platform.masters.manage');
     IF v_scope = 'TENANT' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:MASTER_SCOPE'; END IF;
   ELSE
-    CALL sp_assert_actor(p_actor_id, p_tenant_id, 'tenant.masters.manage');
+    -- los catálogos compartidos con BDT (clientes, perfiles, motivos…) los administra quien gestiona catálogos
+    CALL sp_assert_actor(p_actor_id, p_tenant_id, IF(v_shared = 1, 'catalog.manage', 'tenant.masters.manage'));
     IF v_scope = 'GLOBAL' OR v_system = 1 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:MASTER_SCOPE'; END IF;
   END IF;
   IF JSON_TYPE(JSON_EXTRACT(p_label_i18n, '$.es')) IS NULL THEN
@@ -689,6 +691,10 @@ BEGIN
      WHERE id = v_item_id;
   END IF;
   CALL sp_audit_insert(p_tenant_id, p_actor_id, NULL, 'UPSERT', 'master_item', p_uuid, JSON_OBJECT('table', p_table_code, 'code', p_code), p_ip);
+  -- catálogo compartido: el cambio queda para la sincronización de BDT
+  IF v_shared = 1 THEN
+    INSERT INTO catalog_change (tenant_id, entity, entity_uuid, op) VALUES (p_tenant_id, 'MASTER_ITEM', p_uuid, 'UPSERT');
+  END IF;
   SELECT i.uuid, m.code AS table_code, i.code, i.label_i18n, i.sort_order, i.is_active
     FROM master_item i JOIN master_table m ON m.id = i.master_table_id WHERE i.uuid = p_uuid;
 END $$
