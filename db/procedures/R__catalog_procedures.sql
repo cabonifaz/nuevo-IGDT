@@ -224,18 +224,25 @@ BEGIN
                          WHERE master_table_id = v_table_id AND tenant_key IN (0, p_tenant_id) AND code = v_code AND deleted_at IS NULL
                          ORDER BY tenant_key DESC LIMIT 1);
     END IF;
-    IF v_existing IS NULL AND NOT EXISTS (SELECT 1 FROM master_item WHERE uuid = v_id) THEN
+    IF v_existing IS NULL THEN
+      -- se conserva el uuid de BDT salvo que ya lo use otro tenant (p. ej. un perfil global de BDT que usan varios)
+      SET v_existing = IF(EXISTS (SELECT 1 FROM master_item WHERE uuid = v_id), UUID(), v_id);
       INSERT INTO master_item (uuid, master_table_id, tenant_id, code, label_i18n, str1, str2, sort_order, is_active)
-      VALUES (v_id, v_table_id, p_tenant_id, v_code, v_label, v_str1, v_str2, v_sort, v_active);
-      INSERT INTO catalog_change (tenant_id, entity, entity_uuid, op) VALUES (p_tenant_id, 'MASTER_ITEM', v_id, 'UPSERT');
-      INSERT IGNORE INTO tmp_import_map VALUES ('MASTER_ITEM', v_id, v_id, 1);
-    ELSEIF v_existing IS NOT NULL THEN
+      VALUES (v_existing, v_table_id, p_tenant_id, v_code, v_label, v_str1, v_str2, v_sort, v_active);
+      INSERT INTO catalog_change (tenant_id, entity, entity_uuid, op) VALUES (p_tenant_id, 'MASTER_ITEM', v_existing, 'UPSERT');
+      INSERT IGNORE INTO tmp_import_map VALUES ('MASTER_ITEM', v_id, v_existing, 1);
+    ELSE
       INSERT IGNORE INTO tmp_import_map VALUES ('MASTER_ITEM', v_id, v_existing, 0);
     END IF;
   END LOOP;
   CLOSE cur;
 
-  -- contactos: el cliente se busca por su id en IGDT (mapeado) o por el de BDT
+  -- contactos que ya existían (no se crean ni se marcan como nuevos)
+  INSERT IGNORE INTO tmp_import_map
+  SELECT 'CLIENT_CONTACT', cc.uuid, cc.uuid, 0
+    FROM JSON_TABLE(IFNULL(p_contacts, JSON_ARRAY()), '$[*]' COLUMNS (id CHAR(36) PATH '$.id')) j
+    JOIN client_contact cc ON cc.uuid = j.id AND cc.tenant_id = p_tenant_id;
+  -- contactos nuevos: el cliente se busca por su id en IGDT (mapeado) o por el de BDT
   INSERT INTO client_contact (uuid, tenant_id, client_item_id, first_name, last_name, second_last_name, position, phone, phone2, email, email2)
   SELECT j.id, p_tenant_id, c.id, LEFT(TRIM(j.first_name), 100), LEFT(TRIM(j.last_name), 100), NULLIF(LEFT(TRIM(j.second_last_name), 100), ''),
          NULLIF(LEFT(TRIM(j.position), 150), ''), NULLIF(LEFT(TRIM(j.phone), 30), ''), NULLIF(LEFT(TRIM(j.phone2), 30), ''),
@@ -249,10 +256,12 @@ BEGIN
     JOIN master_table ct ON ct.id = c.master_table_id AND ct.code = 'CLIENT'
    WHERE j.id IS NOT NULL AND TRIM(IFNULL(j.first_name, '')) <> '' AND TRIM(IFNULL(j.last_name, '')) <> ''
      AND NOT EXISTS (SELECT 1 FROM client_contact x WHERE x.uuid = j.id);
+  INSERT IGNORE INTO tmp_import_map
+  SELECT 'CLIENT_CONTACT', cc.uuid, cc.uuid, 1
+    FROM JSON_TABLE(IFNULL(p_contacts, JSON_ARRAY()), '$[*]' COLUMNS (id CHAR(36) PATH '$.id')) j
+    JOIN client_contact cc ON cc.uuid = j.id AND cc.tenant_id = p_tenant_id;
   INSERT INTO catalog_change (tenant_id, entity, entity_uuid, op)
-  SELECT p_tenant_id, 'CLIENT_CONTACT', cc.uuid, 'UPSERT' FROM client_contact cc
-   WHERE cc.tenant_id = p_tenant_id AND cc.created_at >= NOW(3) - INTERVAL 1 MINUTE AND cc.created_by IS NULL
-     AND NOT EXISTS (SELECT 1 FROM catalog_change x WHERE x.entity = 'CLIENT_CONTACT' AND x.entity_uuid = cc.uuid);
+  SELECT p_tenant_id, 'CLIENT_CONTACT', m.igdt_id, 'UPSERT' FROM tmp_import_map m WHERE m.entity = 'CLIENT_CONTACT' AND m.created = 1;
   CALL sp_audit_insert(p_tenant_id, NULL, NULL, 'IMPORT', 'catalog', NULL,
     JSON_OBJECT('items', JSON_LENGTH(IFNULL(p_items, JSON_ARRAY())), 'contacts', JSON_LENGTH(IFNULL(p_contacts, JSON_ARRAY()))), NULL);
   SELECT entity, source_id, igdt_id, created FROM tmp_import_map ORDER BY entity, source_id;
