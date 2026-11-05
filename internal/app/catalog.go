@@ -129,6 +129,21 @@ func (s *CatalogService) Changes(ctx context.Context, tenantID, since uint64, li
 	return out, nil
 }
 
+// Import: carga inicial desde BDT (API de integración, alcance catalog.import). items y contacts son arreglos JSON;
+// el SP descarta lo inválido y devuelve el mapeo de ids.
+func (s *CatalogService) Import(ctx context.Context, tenantID uint64, items, contacts json.RawMessage) ([]ports.ImportMap, error) {
+	for _, raw := range []json.RawMessage{items, contacts} {
+		if len(raw) == 0 {
+			continue
+		}
+		var arr []json.RawMessage
+		if json.Unmarshal(raw, &arr) != nil || len(arr) > 5000 {
+			return nil, domain.ErrValidation
+		}
+	}
+	return s.Repo.Import(ctx, tenantID, items, contacts)
+}
+
 func maxLen(n int, vals ...string) bool {
 	for _, v := range vals {
 		if utf8.RuneCountInString(v) > n {

@@ -22,7 +22,16 @@ type CatalogChange struct {
 	Doc    json.RawMessage
 }
 
+// ImportMap: resultado de la carga inicial: id de BDT y el id que quedó en IGDT (igual si se creó).
+type ImportMap struct {
+	Entity   string `json:"entity"`
+	SourceID string `json:"sourceId"`
+	IgdtID   string `json:"igdtId"`
+	Created  bool   `json:"created"`
+}
+
 type CatalogRepository interface {
+	Import(ctx context.Context, tenantID uint64, items, contacts json.RawMessage) ([]ImportMap, error)
 	Contacts(ctx context.Context, m Meta, tenantID uint64, clientID string) ([]json.RawMessage, error)
 	ContactSave(ctx context.Context, m Meta, tenantID uint64, c ContactWrite) error
 	ContactDelete(ctx context.Context, m Meta, tenantID uint64, id string) error

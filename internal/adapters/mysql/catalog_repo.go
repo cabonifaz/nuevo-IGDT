@@ -35,6 +35,27 @@ func (r CatalogRepo) TariffDelete(ctx context.Context, m ports.Meta, tenantID ui
 	return r.exec(ctx, "sp_tariff_delete", m.ActorID, tenantID, id, nullStr(m.IP))
 }
 
+func (r CatalogRepo) Import(ctx context.Context, tenantID uint64, items, contacts json.RawMessage) ([]ports.ImportMap, error) {
+	rs, err := r.call(ctx, "sp_catalog_import", tenantID, optJSON(items), optJSON(contacts))
+	if err != nil {
+		return nil, err
+	}
+	defer rs.Close()
+	out := []ports.ImportMap{}
+	if !rs.Next() {
+		return out, nil
+	}
+	err = rs.Each(func(scan func(...any) error) error {
+		var m ports.ImportMap
+		if err := scan(&m.Entity, &m.SourceID, &m.IgdtID, &m.Created); err != nil {
+			return err
+		}
+		out = append(out, m)
+		return nil
+	})
+	return out, err
+}
+
 func (r CatalogRepo) Changes(ctx context.Context, tenantID, since uint64, limit int) ([]ports.CatalogChange, error) {
 	rs, err := r.call(ctx, "sp_catalog_changes", tenantID, since, limit)
 	if err != nil {

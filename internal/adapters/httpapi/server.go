@@ -140,6 +140,7 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/whoami", s.integrationWhoAmI)
 		r.With(s.requireScope("masters.read")).Get("/masters", s.integrationMasters)
 		r.With(s.requireScope("masters.read")).Get("/catalog/changes", s.integrationCatalogChanges)
+		r.With(s.requireScope("catalog.import")).Post("/catalog/import", s.integrationCatalogImport)
 	})
 	return r
 }

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -86,6 +87,24 @@ func (s *Server) catalogSaveTariff(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) catalogDeleteTariff(w http.ResponseWriter, r *http.Request) {
 	s.noContent(w, r, s.Catalogs.DeleteTariff(r.Context(), principal(r), s.clientIP(r), chi.URLParam(r, "id")))
+}
+
+// integrationCatalogImport: carga inicial de los catálogos que BDT ya tenía (una vez, al activar la integración).
+func (s *Server) integrationCatalogImport(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Items    json.RawMessage `json:"items"`
+		Contacts json.RawMessage `json:"contacts"`
+	}
+	if err := decode(w, r, &in); err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	out, err := s.Catalogs.Import(r.Context(), apiClient(r).TenantID, in.Items, in.Contacts)
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"map": out})
 }
 
 // integrationCatalogChanges: cambios de los catálogos compartidos desde el cursor ?since= (BDT sincroniza su copia

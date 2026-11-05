@@ -180,4 +180,83 @@ BEGIN
    LIMIT p_limit;
 END $$
 
+-- Carga inicial desde BDT (una vez, al activar la integración): clientes y perfiles del tenant y contactos.
+-- p_items: [{table, id, code, label, str1, str2, sortOrder, active}], p_contacts: [{id, clientId, firstName, ...}].
+-- Un ítem cuyo uuid ya existe se deja igual; si existe otro con el mismo código, no se pisa y se devuelve su uuid para
+-- que BDT lo use; si no existe, se crea con el uuid de BDT. Devuelve el mapeo (entidad, id de BDT, id en IGDT).
+-- Sin actor: lo llama la API de integración (alcance catalog.import).
+DROP PROCEDURE IF EXISTS sp_catalog_import $$
+CREATE PROCEDURE sp_catalog_import(IN p_tenant_id BIGINT UNSIGNED, IN p_items JSON, IN p_contacts JSON)
+BEGIN
+  DECLARE v_done INT DEFAULT 0;
+  DECLARE v_table, v_code VARCHAR(60);
+  DECLARE v_id, v_existing CHAR(36);
+  DECLARE v_label JSON;
+  DECLARE v_str1, v_str2 VARCHAR(250);
+  DECLARE v_sort INT;
+  DECLARE v_active TINYINT(1);
+  DECLARE v_table_id BIGINT UNSIGNED;
+  DECLARE cur CURSOR FOR
+    SELECT j.tbl, j.id, j.code, j.label, j.str1, j.str2, IFNULL(j.sort_order, 0), IFNULL(j.active, 1)
+      FROM JSON_TABLE(IFNULL(p_items, JSON_ARRAY()), '$[*]' COLUMNS (tbl VARCHAR(60) PATH '$.table', id CHAR(36) PATH '$.id',
+             code VARCHAR(60) PATH '$.code', label JSON PATH '$.label', str1 VARCHAR(250) PATH '$.str1', str2 VARCHAR(250) PATH '$.str2',
+             sort_order INT PATH '$.sortOrder', active TINYINT PATH '$.active')) j;
+  DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_done = 1;
+  IF JSON_LENGTH(IFNULL(p_items, JSON_ARRAY())) > 2000 OR JSON_LENGTH(IFNULL(p_contacts, JSON_ARRAY())) > 5000 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:VALIDATION';
+  END IF;
+  DROP TEMPORARY TABLE IF EXISTS tmp_import_map;
+  CREATE TEMPORARY TABLE tmp_import_map (entity VARCHAR(20), source_id CHAR(36), igdt_id CHAR(36), created TINYINT(1), PRIMARY KEY (entity, source_id)) ENGINE=MEMORY;
+
+  OPEN cur;
+  items: LOOP
+    FETCH cur INTO v_table, v_id, v_code, v_label, v_str1, v_str2, v_sort, v_active;
+    IF v_done = 1 THEN LEAVE items; END IF;
+    -- solo los catálogos compartidos que son propios del tenant
+    -- SET = (SELECT …) y no SELECT … INTO: sin filas, este último dispararía el NOT FOUND del cursor y cortaría el bucle
+    SET v_table_id = (SELECT id FROM master_table WHERE code = v_table AND shared = 1 AND scope IN ('TENANT', 'BOTH') AND deleted_at IS NULL);
+    IF v_table_id IS NULL OR v_id IS NULL OR v_code IS NULL OR JSON_TYPE(JSON_EXTRACT(v_label, '$.es')) IS NULL THEN
+      ITERATE items;
+    END IF;
+    SET v_existing = (SELECT uuid FROM master_item WHERE uuid = v_id AND tenant_id = p_tenant_id);
+    IF v_existing IS NULL THEN
+      SET v_existing = (SELECT uuid FROM master_item
+                         WHERE master_table_id = v_table_id AND tenant_key IN (0, p_tenant_id) AND code = v_code AND deleted_at IS NULL
+                         ORDER BY tenant_key DESC LIMIT 1);
+    END IF;
+    IF v_existing IS NULL AND NOT EXISTS (SELECT 1 FROM master_item WHERE uuid = v_id) THEN
+      INSERT INTO master_item (uuid, master_table_id, tenant_id, code, label_i18n, str1, str2, sort_order, is_active)
+      VALUES (v_id, v_table_id, p_tenant_id, v_code, v_label, v_str1, v_str2, v_sort, v_active);
+      INSERT INTO catalog_change (tenant_id, entity, entity_uuid, op) VALUES (p_tenant_id, 'MASTER_ITEM', v_id, 'UPSERT');
+      INSERT IGNORE INTO tmp_import_map VALUES ('MASTER_ITEM', v_id, v_id, 1);
+    ELSEIF v_existing IS NOT NULL THEN
+      INSERT IGNORE INTO tmp_import_map VALUES ('MASTER_ITEM', v_id, v_existing, 0);
+    END IF;
+  END LOOP;
+  CLOSE cur;
+
+  -- contactos: el cliente se busca por su id en IGDT (mapeado) o por el de BDT
+  INSERT INTO client_contact (uuid, tenant_id, client_item_id, first_name, last_name, second_last_name, position, phone, phone2, email, email2)
+  SELECT j.id, p_tenant_id, c.id, LEFT(TRIM(j.first_name), 100), LEFT(TRIM(j.last_name), 100), NULLIF(LEFT(TRIM(j.second_last_name), 100), ''),
+         NULLIF(LEFT(TRIM(j.position), 150), ''), NULLIF(LEFT(TRIM(j.phone), 30), ''), NULLIF(LEFT(TRIM(j.phone2), 30), ''),
+         NULLIF(LEFT(LOWER(TRIM(j.email)), 254), ''), NULLIF(LEFT(LOWER(TRIM(j.email2)), 254), '')
+    FROM JSON_TABLE(IFNULL(p_contacts, JSON_ARRAY()), '$[*]' COLUMNS (id CHAR(36) PATH '$.id', client_id CHAR(36) PATH '$.clientId',
+           first_name VARCHAR(200) PATH '$.firstName', last_name VARCHAR(200) PATH '$.lastName', second_last_name VARCHAR(200) PATH '$.secondLastName',
+           position VARCHAR(300) PATH '$.position', phone VARCHAR(60) PATH '$.phone', phone2 VARCHAR(60) PATH '$.phone2',
+           email VARCHAR(400) PATH '$.email', email2 VARCHAR(400) PATH '$.email2')) j
+    JOIN master_item c ON c.uuid = IFNULL((SELECT m.igdt_id FROM tmp_import_map m WHERE m.entity = 'MASTER_ITEM' AND m.source_id = j.client_id), j.client_id)
+                      AND c.tenant_id = p_tenant_id AND c.deleted_at IS NULL
+    JOIN master_table ct ON ct.id = c.master_table_id AND ct.code = 'CLIENT'
+   WHERE j.id IS NOT NULL AND TRIM(IFNULL(j.first_name, '')) <> '' AND TRIM(IFNULL(j.last_name, '')) <> ''
+     AND NOT EXISTS (SELECT 1 FROM client_contact x WHERE x.uuid = j.id);
+  INSERT INTO catalog_change (tenant_id, entity, entity_uuid, op)
+  SELECT p_tenant_id, 'CLIENT_CONTACT', cc.uuid, 'UPSERT' FROM client_contact cc
+   WHERE cc.tenant_id = p_tenant_id AND cc.created_at >= NOW(3) - INTERVAL 1 MINUTE AND cc.created_by IS NULL
+     AND NOT EXISTS (SELECT 1 FROM catalog_change x WHERE x.entity = 'CLIENT_CONTACT' AND x.entity_uuid = cc.uuid);
+  CALL sp_audit_insert(p_tenant_id, NULL, NULL, 'IMPORT', 'catalog', NULL,
+    JSON_OBJECT('items', JSON_LENGTH(IFNULL(p_items, JSON_ARRAY())), 'contacts', JSON_LENGTH(IFNULL(p_contacts, JSON_ARRAY()))), NULL);
+  SELECT entity, source_id, igdt_id, created FROM tmp_import_map ORDER BY entity, source_id;
+  DROP TEMPORARY TABLE tmp_import_map;
+END $$
+
 DELIMITER ;
