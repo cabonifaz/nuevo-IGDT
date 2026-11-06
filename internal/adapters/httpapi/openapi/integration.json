@@ -1,15 +1,27 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "Banco de Talentos - API de integración",
+    "title": "IGDT - API de integración",
     "version": "1.0.0",
-    "description": "API para integrar sistemas externos con el Banco de Talentos. Cada API key pertenece a un tenant y debe ser habilitada por el Super Administrador. Envíe la key en la cabecera X-Api-Key. Límite: 300 solicitudes por minuto por IP."
+    "description": "API para integrar sistemas externos (como el Banco de Talentos, BDT) con IGDT, el maestro único de catálogos. Cada token pertenece a una empresa (tenant) y debe ser habilitado por el Super Administrador. Envíe el token en la cabecera X-Api-Key. Límite: 300 solicitudes por minuto por IP."
   },
-  "servers": [{ "url": "/integration/v1" }],
-  "security": [{ "ApiKey": [] }],
+  "servers": [
+    {
+      "url": "/integration/v1"
+    }
+  ],
+  "security": [
+    {
+      "ApiKey": []
+    }
+  ],
   "components": {
     "securitySchemes": {
-      "ApiKey": { "type": "apiKey", "in": "header", "name": "X-Api-Key" }
+      "ApiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Api-Key"
+      }
     },
     "schemas": {
       "Error": {
@@ -18,8 +30,13 @@
           "error": {
             "type": "object",
             "properties": {
-              "code": { "type": "string", "example": "APIKEY_INVALID" },
-              "requestId": { "type": "string" }
+              "code": {
+                "type": "string",
+                "example": "APIKEY_INVALID"
+              },
+              "requestId": {
+                "type": "string"
+              }
             }
           }
         }
@@ -27,23 +44,113 @@
       "MasterItem": {
         "type": "object",
         "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "table": { "type": "string", "example": "LANGUAGE" },
-          "code": { "type": "string", "example": "EN" },
-          "label": { "type": "object", "additionalProperties": { "type": "string" }, "example": { "es": "Inglés", "en": "English" } },
-          "parentId": { "type": "string", "format": "uuid", "nullable": true },
-          "num1": { "type": "number", "nullable": true },
-          "str1": { "type": "string", "nullable": true },
-          "sortOrder": { "type": "integer" },
-          "isActive": { "type": "boolean" },
-          "isTenantOwned": { "type": "boolean" }
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "table": {
+            "type": "string",
+            "example": "CLIENT"
+          },
+          "code": {
+            "type": "string",
+            "example": "CLI_ANTAMINA_A1B2"
+          },
+          "label": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "example": {
+              "es": "Compañía Minera Antamina",
+              "en": "Compañía Minera Antamina"
+            }
+          },
+          "parentId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "num1": {
+            "type": "number",
+            "nullable": true
+          },
+          "str1": {
+            "type": "string",
+            "nullable": true
+          },
+          "sortOrder": {
+            "type": "integer"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "isTenantOwned": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CatalogChange": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "integer",
+            "description": "Posición del cambio (creciente)"
+          },
+          "entity": {
+            "type": "string",
+            "enum": [
+              "MASTER_ITEM",
+              "CLIENT_CONTACT",
+              "TARIFF"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "op": {
+            "type": "string",
+            "enum": [
+              "UPSERT",
+              "DELETE"
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data": {
+            "type": "object",
+            "description": "Estado actual del registro (MASTER_ITEM: table, code, label, tenantScoped, str1-3, num1-3, sortOrder, active, deleted; CLIENT_CONTACT: clientId, nombres, cargo, correos, teléfonos, deleted; TARIFF: clientId, profileId, currencyId, rateTypeId, rate, validFrom, validTo, deleted)"
+          }
         }
       }
     },
     "responses": {
-      "Unauthorized": { "description": "API key ausente o inválida", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-      "Forbidden": { "description": "API key no habilitada o sin el scope requerido", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-      "TooMany": { "description": "Límite de solicitudes superado" }
+      "Unauthorized": {
+        "description": "API key ausente o inválida",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "API key no habilitada o sin el scope requerido",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "TooMany": {
+        "description": "Límite de solicitudes superado"
+      }
     }
   },
   "paths": {
@@ -53,12 +160,34 @@
         "responses": {
           "200": {
             "description": "Tenant y scopes de la key",
-            "content": { "application/json": { "schema": { "type": "object", "properties": {
-              "tenant": { "type": "string" }, "keyId": { "type": "string" },
-              "scopes": { "type": "array", "items": { "type": "string" } } } } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tenant": {
+                      "type": "string"
+                    },
+                    "keyId": {
+                      "type": "string"
+                    },
+                    "scopes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
@@ -66,16 +195,228 @@
       "get": {
         "summary": "Catálogos (maestro de maestros) visibles para el tenant",
         "description": "Requiere el scope masters.read.",
-        "parameters": [{
-          "name": "tables", "in": "query", "required": false,
-          "description": "Códigos de catálogo separados por coma (LANGUAGE,CURRENCY,...)",
-          "schema": { "type": "string" }
-        }],
+        "parameters": [
+          {
+            "name": "tables",
+            "in": "query",
+            "required": false,
+            "description": "Códigos de catálogo separados por coma (CLIENT,RQ_PROFILE,CURRENCY,...)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
-          "200": { "description": "Valores", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/MasterItem" } } } } },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "429": { "$ref": "#/components/responses/TooMany" }
+          "200": {
+            "description": "Valores",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MasterItem"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          }
+        }
+      }
+    },
+    "/catalog/changes": {
+      "get": {
+        "summary": "Cambios de los catálogos compartidos desde un cursor",
+        "description": "Requiere masters.read. Devuelve los cambios posteriores a since, en orden, con el estado actual de cada registro. Guarde next y envíelo como since en la próxima llamada; mientras more sea true quedan cambios.",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 500,
+              "maximum": 1000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de cambios",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "changes": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CatalogChange"
+                      }
+                    },
+                    "next": {
+                      "type": "integer"
+                    },
+                    "more": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          }
+        }
+      }
+    },
+    "/catalog/import": {
+      "post": {
+        "summary": "Carga inicial de catálogos existentes",
+        "description": "Requiere catalog.import. Se usa una vez al conectar: clientes y perfiles (items) y contactos. Lo nuevo se crea con el mismo id; si el código ya existe no se pisa y se devuelve el id de IGDT. Repetible sin duplicar.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "table": {
+                          "type": "string",
+                          "enum": [
+                            "CLIENT",
+                            "RQ_PROFILE"
+                          ]
+                        },
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "object"
+                        },
+                        "str1": {
+                          "type": "string"
+                        },
+                        "str2": {
+                          "type": "string"
+                        },
+                        "sortOrder": {
+                          "type": "integer"
+                        },
+                        "active": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  },
+                  "contacts": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "clientId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "firstName": {
+                          "type": "string"
+                        },
+                        "lastName": {
+                          "type": "string"
+                        },
+                        "position": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "phone": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Mapeo de ids",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "map": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "entity": {
+                            "type": "string"
+                          },
+                          "sourceId": {
+                            "type": "string"
+                          },
+                          "igdtId": {
+                            "type": "string"
+                          },
+                          "created": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     }
