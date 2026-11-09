@@ -94,8 +94,19 @@ type BDTRequirement struct {
 	Vacancies   []bdtVacancy   `json:"vacancies"`
 	Candidates  []bdtCandidate `json:"candidates"`
 	StageCounts map[string]int `json:"stageCounts"`
-	UpdatedAt   time.Time      `json:"updatedAt"`
-	Deleted     bool           `json:"deleted"`
+	CreatedAt   string         `json:"createdAt,omitempty"`
+	Alerts      *bdtAlerts     `json:"alerts,omitempty"`
+	// calculados al recibir (tablero): última entrada a la etapa de cada postulante en proceso (ni confirmado ni renunciado)
+	InProcessAt []string  `json:"inProcessAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+	Deleted     bool      `json:"deleted"`
+}
+
+// bdtAlerts: días hábiles sin movimiento para la alerta de atención y la crítica (configuración de BDT).
+type bdtAlerts struct {
+	Enabled      bool `json:"enabled"`
+	WarnDays     int  `json:"warnDays"`
+	CriticalDays int  `json:"criticalDays"`
 }
 
 // BDTHire: estado de un candidato confirmado (Active = sigue confirmado en BDT).
@@ -203,22 +214,39 @@ func normalizeRequirement(q *BDTRequirement) (ports.RequirementWrite, bool) {
 		}
 		st.Group, st.Code, st.Label = "CLOSED", "DELETED", "Eliminado"
 	}
+	if a := q.Alerts; a != nil && (a.WarnDays < 1 || a.WarnDays > 90 || a.CriticalDays <= a.WarnDays || a.CriticalDays > 180) {
+		q.Alerts = nil
+	}
+	if q.CreatedAt != "" && !maxLen(40, q.CreatedAt) {
+		q.CreatedAt = ""
+	}
 	vacs, covered := 0, 0
-	for _, v := range q.Vacancies {
+	vacIdx := map[string]int{}
+	for i, v := range q.Vacancies {
 		if !validUUID(v.ID) || !optUUID(v.Profile.ID) || v.Quantity < 0 || !maxLen(200, v.Profile.Label) {
 			return ports.RequirementWrite{}, false
 		}
 		vacs += v.Quantity
+		q.Vacancies[i].Covered = 0
+		vacIdx[v.ID] = i
 	}
 	q.StageCounts = map[string]int{}
+	q.InProcessAt = []string{}
 	for _, c := range q.Candidates {
 		if !validUUID(c.ID) || !optUUID(c.VacancyID) || !optUUID(c.TalentID) || c.Stage.Code == "" ||
-			!maxLen(250, c.Name, c.Headline) || !maxLen(40, c.Stage.Code) {
+			!maxLen(250, c.Name, c.Headline) || !maxLen(40, c.Stage.Code, c.StageAt) {
 			return ports.RequirementWrite{}, false
 		}
 		q.StageCounts[c.Stage.Code]++
-		if c.Stage.Code == "CONFIRMED" {
+		switch {
+		case c.Resigned: // ya no cubre la vacante (igual que BDT)
+		case c.Stage.Code == "CONFIRMED":
 			covered++
+			if i, ok := vacIdx[c.VacancyID]; ok {
+				q.Vacancies[i].Covered++
+			}
+		default:
+			q.InProcessAt = append(q.InProcessAt, c.StageAt)
 		}
 	}
 	doc, err := json.Marshal(q)

@@ -46,6 +46,11 @@ BEGIN
            'requestDate', r.request_date, 'dueDate', r.due_date, 'vacancies', r.vacancies, 'covered', r.covered,
            'candidates', r.candidates, 'stageCounts', JSON_EXTRACT(r.doc, '$.stageCounts'),
            'owner', JSON_EXTRACT(r.doc, '$.owner'), 'closedAt', JSON_EXTRACT(r.doc, '$.closedAt'),
+           'createdAt', JSON_EXTRACT(r.doc, '$.createdAt'), 'alerts', JSON_EXTRACT(r.doc, '$.alerts'),
+           'inProcessAt', JSON_EXTRACT(r.doc, '$.inProcessAt'),
+           'profiles', (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', v.pid, 'label', v.label, 'total', v.qty, 'covered', IFNULL(v.cov, 0)))
+                          FROM JSON_TABLE(r.doc, '$.vacancies[*]' COLUMNS (pid CHAR(36) PATH '$.profile.id', label VARCHAR(200) PATH '$.profile.label',
+                                                                         qty INT PATH '$.quantity', cov INT PATH '$.covered')) v),
            'hiresOpen', (SELECT COUNT(*) FROM hire_request h WHERE h.tenant_id = r.tenant_id AND h.requirement_uuid = r.uuid
                           AND h.status IN ('PENDING', 'IN_PROGRESS')),
            'updatedAt', r.source_updated_at, 'receivedAt', r.received_at) AS doc
@@ -138,7 +143,7 @@ BEGIN
            'client', JSON_OBJECT('id', h.client_uuid, 'label', h.client_label),
            'profile', JSON_OBJECT('id', h.profile_uuid, 'label', h.profile_label),
            'confirmedAt', h.confirmed_at, 'receivedAt', h.received_at, 'takenAt', h.taken_at, 'cancelledAt', h.cancelled_at,
-           'assignedNameEnc', TO_BASE64(u.full_name_enc)) AS doc
+           'completedAt', h.completed_at, 'assignedNameEnc', TO_BASE64(u.full_name_enc), 'mine', h.assigned_user_id <=> p_actor_id) AS doc
     FROM hire_request h
     LEFT JOIN app_user u ON u.id = h.assigned_user_id
    WHERE h.tenant_id = p_tenant_id AND (p_status IS NULL OR h.status = p_status)

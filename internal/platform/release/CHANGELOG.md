@@ -3,6 +3,10 @@
 Formato: `## vMAYOR.MENOR — AAAA-MM-DD`, seguido de los cambios en viñetas (español). Al publicar una versión se
 sube `VERSION` y se agrega su sección aquí: la API la registra al desplegarse en cada ambiente y la notifica.
 
+## v0.4 — 2026-11-09
+- Requerimientos en tablero Kanban, igual que en BDT: columnas por estado (Registrado, Asignado, En selección, En producción y Cerrados), vistas Abiertos, Por vencer, Vencidos, Nuevos, Sin movimiento, Cerrados y Todos, filtros por cliente y perfil, cobertura por perfil y responsables. La ficha tiene las pestañas Candidatos y Detalle. Es de solo lectura.
+- Solicitudes de ingreso en tablero Kanban: Pendiente, En curso y Cerradas. Se toman arrastrándolas a En curso y el ingreso se registra al soltarlas en Cerradas. Vistas Abiertas, Nuevas, Sin movimiento, Cerradas y Todas, con filtro «Solo mías».
+
 ## v0.3 — 2026-11-09
 - Registro del ingreso desde la solicitud: contrato (cargo, modalidad, motivo, inicio y término propuesto por el RQ), área, sede, ubicación, horario, remuneración (planilla o locación de servicios, guardada cifrada), SUNAT y equipos a entregar.
 - Colaboradores: los talentos con ingreso registrado y su contrato vigente, con aviso de los que vencen en 30 días.
