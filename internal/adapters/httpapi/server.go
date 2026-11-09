@@ -145,6 +145,7 @@ func (s *Server) Handler() http.Handler {
 		r.With(s.requireScope("catalog.import")).Post("/catalog/import", s.integrationCatalogImport)
 		r.With(s.requireScope("requirements.write")).Post("/requirements", s.integrationRequirements)
 		r.With(s.requireScope("hires.write")).Post("/hires", s.integrationHires)
+		r.With(s.requireScope("hires.read")).Get("/hires/events", s.integrationHireEvents)
 	})
 	return r
 }

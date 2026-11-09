@@ -3,6 +3,11 @@
 Formato: `## vMAYOR.MENOR — AAAA-MM-DD`, seguido de los cambios en viñetas (español). Al publicar una versión se
 sube `VERSION` y se agrega su sección aquí: la API la registra al desplegarse en cada ambiente y la notifica.
 
+## v0.3 — 2026-11-09
+- Registro del ingreso desde la solicitud: contrato (cargo, modalidad, motivo, inicio y término propuesto por el RQ), área, sede, ubicación, horario, remuneración (planilla o locación de servicios, guardada cifrada), SUNAT y equipos a entregar.
+- Colaboradores: los talentos con ingreso registrado y su contrato vigente, con aviso de los que vencen en 30 días.
+- BDT se entera del ingreso al momento (evento de ingreso con el alcance `hires.read`): marca al candidato y cierra el requerimiento cuando cubre sus vacantes.
+
 ## v0.2 — 2026-11-09
 - Bandeja de selección: los requerimientos que Selección gestiona en BDT llegan solos a IGDT con sus vacantes, tarifas y el tablero de postulantes por etapa (solo lectura), con indicadores de vencidos, cobertura y solicitudes por atender.
 - Solicitudes de ingreso: cada candidato que Selección confirma en BDT crea una solicitud con los datos del talento (cifrados), el requerimiento, el cliente, el perfil y la tarifa; el gestor de servicios la toma y, si Selección retira la confirmación, se cancela sola.

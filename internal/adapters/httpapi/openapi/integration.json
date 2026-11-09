@@ -894,6 +894,112 @@
           }
         }
       }
+    },
+    "/hires/events": {
+      "get": {
+        "summary": "Ingresos registrados (para BDT)",
+        "description": "Requiere hires.read. Eventos desde el cursor ?since= (HIRED: el gestor registró el ingreso del candidato). BDT marca al candidato como ingresado y cierra el RQ que cubrió sus vacantes. Respuesta: events, next (cursor para la próxima llamada) y more.",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de eventos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "HIRED"
+                            ]
+                          },
+                          "candidateId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "requirementId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "talentId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "hireId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "employeeId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "position": {
+                            "type": "string"
+                          },
+                          "startDate": {
+                            "type": "string",
+                            "format": "date"
+                          },
+                          "endDate": {
+                            "type": "string",
+                            "format": "date"
+                          },
+                          "contract": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    },
+                    "next": {
+                      "type": "integer"
+                    },
+                    "more": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          }
+        }
+      }
     }
   }
 }

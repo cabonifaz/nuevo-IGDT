@@ -3,8 +3,11 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/cabonifaz/nuevo-IGDT/internal/app"
 )
 
 // Bandeja de selección: RQ de BDT (solo lectura) y solicitudes de ingreso.
@@ -16,6 +19,8 @@ func (s *Server) selectionRoutes(r chi.Router) {
 	r.With(read, feat).Get("/hire-requests", s.selHires)
 	r.With(read, feat).Get("/hire-requests/{id}", s.selHire)
 	r.With(s.requirePerm("hire.write"), feat).Post("/hire-requests/{id}/take", s.selTakeHire)
+	r.With(s.requirePerm("hire.write"), feat).Post("/hire-requests/{id}/hire", s.selCompleteHire)
+	r.With(s.requirePerm("employee.read")).Get("/employees", s.selEmployees)
 }
 
 func (s *Server) selRequirements(w http.ResponseWriter, r *http.Request) {
@@ -91,4 +96,41 @@ func (s *Server) integrationHires(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": out})
+}
+
+func (s *Server) selCompleteHire(w http.ResponseWriter, r *http.Request) {
+	var in app.HireForm
+	if err := decode(w, r, &in); err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	id, err := s.Selection.CompleteHire(r.Context(), principal(r), s.clientIP(r), chi.URLParam(r, "id"), in)
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{"id": id})
+}
+
+func (s *Server) selEmployees(w http.ResponseWriter, r *http.Request) {
+	out, err := s.Selection.Employees(r.Context(), principal(r))
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// integrationHireEvents: ingresos registrados desde el cursor ?since= (BDT marca al candidato y cierra el RQ).
+func (s *Server) integrationHireEvents(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	since, _ := strconv.ParseUint(q.Get("since"), 10, 64)
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	out, err := s.Selection.HireEvents(r.Context(), apiClient(r).TenantID, since, limit)
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	noStore(w)
+	writeJSON(w, http.StatusOK, map[string]any{"events": out.Changes, "next": out.Next, "more": out.More})
 }

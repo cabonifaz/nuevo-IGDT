@@ -35,6 +35,7 @@ type HireReceived struct {
 }
 
 type SelectionRepository interface {
+	HireRepository
 	RequirementUpsert(ctx context.Context, tenantID uint64, r RequirementWrite) (bool, error)
 	Requirements(ctx context.Context, m Meta, tenantID uint64, scope string) ([]json.RawMessage, error)
 	Requirement(ctx context.Context, m Meta, tenantID uint64, id string) (json.RawMessage, error)
@@ -42,4 +43,22 @@ type SelectionRepository interface {
 	Hires(ctx context.Context, m Meta, tenantID uint64, status *string) ([]json.RawMessage, error)
 	Hire(ctx context.Context, m Meta, tenantID uint64, id string) (json.RawMessage, error)
 	HireTake(ctx context.Context, m Meta, tenantID uint64, id string) error
+}
+
+// HireInput: registro del ingreso desde la solicitud. PayEnc: remuneración cifrada (JSON con los montos).
+type HireInput struct {
+	RequestID, HireID, EmployeeID, Position, ContractID, ReasonID, AreaID, SiteID string
+	StartDate, EndDate, Schedule, ContractObject, ProjectService, Location, Notes string
+	CurrencyID                                                                    string
+	SunatDeclared, HasEquipment                                                   bool
+	Equipment                                                                     []string
+	PayEnc                                                                        []byte
+}
+
+// HireRepository: ingresos registrados, colaboradores y eventos para BDT.
+type HireRepository interface {
+	HireComplete(ctx context.Context, m Meta, tenantID uint64, in HireInput) error
+	HireOf(ctx context.Context, m Meta, tenantID uint64, requestID string) (json.RawMessage, error)
+	Employees(ctx context.Context, m Meta, tenantID uint64) ([]json.RawMessage, error)
+	HireEvents(ctx context.Context, tenantID, since uint64, limit int) ([]CatalogChange, error)
 }

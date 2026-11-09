@@ -59,6 +59,9 @@ type bdtCandidate struct {
 	Stage     bdtStage `json:"stage"`
 	StageAt   string   `json:"stageAt,omitempty"`
 	AddedAt   string   `json:"addedAt,omitempty"`
+	Resigned  bool     `json:"resigned,omitempty"`
+	Hired     bool     `json:"hired,omitempty"`
+	StartDate string   `json:"startDate,omitempty"`
 }
 
 type bdtConditions struct {
@@ -479,7 +482,17 @@ func (s *SelectionService) Hire(ctx context.Context, p *domain.Principal, ip, id
 	if err != nil {
 		return nil, err
 	}
-	return decryptFields(s.Cipher, decryptNames(s.Cipher, doc), "docNumberEnc", "emailEnc", "phoneEnc"), nil
+	out := decryptFields(s.Cipher, decryptNames(s.Cipher, doc), "docNumberEnc", "emailEnc", "phoneEnc")
+	var m map[string]any
+	if json.Unmarshal(out, &m) != nil || m["status"] != "COMPLETED" {
+		return out, nil
+	}
+	hire, err := s.hireOf(ctx, p, tid, id)
+	if err != nil {
+		return nil, err
+	}
+	m["hire"] = hire
+	return json.Marshal(m)
 }
 
 func (s *SelectionService) TakeHire(ctx context.Context, p *domain.Principal, ip, id string) error {

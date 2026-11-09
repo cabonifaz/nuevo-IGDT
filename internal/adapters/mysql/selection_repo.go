@@ -84,3 +84,50 @@ func nullBytes(b []byte) any {
 	}
 	return b
 }
+
+func (r SelectionRepo) HireComplete(ctx context.Context, m ports.Meta, tenantID uint64, in ports.HireInput) error {
+	var eq any
+	if len(in.Equipment) > 0 {
+		b, _ := json.Marshal(in.Equipment)
+		eq = string(b)
+	}
+	return r.exec(ctx, "sp_hire_complete", m.ActorID, tenantID, in.RequestID, in.HireID, in.EmployeeID, in.Position, in.ContractID,
+		in.ReasonID, in.AreaID, nullStr(in.SiteID), in.StartDate, nullStr(in.EndDate), in.Schedule, nullStr(in.ContractObject),
+		nullStr(in.ProjectService), nullStr(in.Location), in.SunatDeclared, in.HasEquipment, eq, in.CurrencyID, in.PayEnc,
+		nullStr(in.Notes), nullStr(m.IP))
+}
+
+func (r SelectionRepo) HireOf(ctx context.Context, m ports.Meta, tenantID uint64, requestID string) (json.RawMessage, error) {
+	list, err := docRepo(r).rawDocs(ctx, "sp_hire_of_request", m.ActorID, tenantID, requestID)
+	if err != nil || len(list) == 0 {
+		return nil, err
+	}
+	return list[0], nil
+}
+
+func (r SelectionRepo) Employees(ctx context.Context, m ports.Meta, tenantID uint64) ([]json.RawMessage, error) {
+	return docRepo(r).rawDocs(ctx, "sp_employee_list", m.ActorID, tenantID)
+}
+
+func (r SelectionRepo) HireEvents(ctx context.Context, tenantID, since uint64, limit int) ([]ports.CatalogChange, error) {
+	rs, err := r.call(ctx, "sp_hire_events", tenantID, since, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rs.Close()
+	out := []ports.CatalogChange{}
+	if !rs.Next() {
+		return out, nil
+	}
+	err = rs.Each(func(scan func(...any) error) error {
+		var c ports.CatalogChange
+		var doc []byte
+		if err := scan(&c.Cursor, &doc); err != nil {
+			return err
+		}
+		c.Doc = doc
+		out = append(out, c)
+		return nil
+	})
+	return out, err
+}
