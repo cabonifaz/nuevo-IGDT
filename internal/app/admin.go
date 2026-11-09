@@ -257,7 +257,7 @@ func maskEmail(e string) string {
 
 // AllowedScopes: alcances de las API keys de integración (BDT envía ingresos y consulta su estado, lee los
 // catálogos que gobierna IGDT y hace su carga inicial).
-var AllowedScopes = []string{"hires.write", "hires.read", "employees.read", "masters.read", "catalog.import"}
+var AllowedScopes = []string{"hires.write", "hires.read", "employees.read", "masters.read", "catalog.import", "requirements.write"}
 
 type ApiKeyService struct {
 	Repo   ports.ApiKeyRepository

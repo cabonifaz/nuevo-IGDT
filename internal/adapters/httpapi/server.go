@@ -29,6 +29,7 @@ type Deps struct {
 	Files         *app.FileService
 	Notifications *app.NotificationService
 	Catalogs      *app.CatalogService
+	Selection     *app.SelectionService
 	Features      *app.FeatureService
 	Versions      *app.VersionService
 	Support       *app.SupportService
@@ -108,6 +109,7 @@ func (s *Server) Handler() http.Handler {
 				r.With(s.requirePerm("tenant.audit.read")).Get("/audit", s.listAudit)
 				r.Group(s.notificationRoutes)
 				r.Group(s.catalogRoutes)
+				r.Group(s.selectionRoutes)
 			})
 
 			// Plataforma (Super Admin)
@@ -141,6 +143,8 @@ func (s *Server) Handler() http.Handler {
 		r.With(s.requireScope("masters.read")).Get("/masters", s.integrationMasters)
 		r.With(s.requireScope("masters.read")).Get("/catalog/changes", s.integrationCatalogChanges)
 		r.With(s.requireScope("catalog.import")).Post("/catalog/import", s.integrationCatalogImport)
+		r.With(s.requireScope("requirements.write")).Post("/requirements", s.integrationRequirements)
+		r.With(s.requireScope("hires.write")).Post("/hires", s.integrationHires)
 	})
 	return r
 }

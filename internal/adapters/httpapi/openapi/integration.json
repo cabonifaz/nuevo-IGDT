@@ -125,6 +125,387 @@
             "description": "Estado actual del registro (MASTER_ITEM: table, code, label, tenantScoped, str1-3, num1-3, sortOrder, active, deleted; CLIENT_CONTACT: clientId, nombres, cargo, correos, teléfonos, deleted; TARIFF: clientId, profileId, currencyId, rateTypeId, rate, validFrom, validTo, deleted)"
           }
         }
+      },
+      "SyncResults": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "ok": {
+                  "type": "boolean"
+                },
+                "applied": {
+                  "type": "boolean",
+                  "description": "RQ: false si el envío era más viejo que el guardado"
+                },
+                "event": {
+                  "type": "string",
+                  "enum": [
+                    "NEW",
+                    "REOPENED",
+                    "UPDATED",
+                    "CANCELLED",
+                    "NONE"
+                  ]
+                },
+                "error": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Requirement": {
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "title",
+          "status",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "group": {
+                "type": "string",
+                "enum": [
+                  "OPEN",
+                  "CLOSED"
+                ]
+              }
+            }
+          },
+          "client": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "label": {
+                "type": "string"
+              }
+            }
+          },
+          "owner": {
+            "type": "string"
+          },
+          "requestDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "dueDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "closedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "conditions": {
+            "type": "object",
+            "properties": {
+              "workModality": {
+                "type": "string"
+              },
+              "duration": {
+                "type": "string"
+              },
+              "contract": {
+                "type": "string"
+              },
+              "emo": {
+                "type": "boolean"
+              },
+              "sctr": {
+                "type": "boolean"
+              },
+              "laptop": {
+                "type": "boolean"
+              }
+            }
+          },
+          "stages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "order": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "vacancies": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "profile": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "label": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "quantity": {
+                  "type": "integer"
+                },
+                "rateInitial": {
+                  "type": "number"
+                },
+                "rateFinal": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "candidates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "vacancyId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "talentId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "headline": {
+                  "type": "string"
+                },
+                "stage": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "order": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "stageAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "addedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "resigned": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Hire": {
+        "type": "object",
+        "required": [
+          "id",
+          "active"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "uuid del candidato en BDT"
+          },
+          "active": {
+            "type": "boolean",
+            "description": "true: confirmado y vigente; false: se retiró la confirmación"
+          },
+          "requirement": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "code": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          "client": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "label": {
+                "type": "string"
+              }
+            }
+          },
+          "vacancy": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "profile": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "label": {
+                    "type": "string"
+                  }
+                }
+              },
+              "rateInitial": {
+                "type": "number"
+              },
+              "rateFinal": {
+                "type": "number"
+              }
+            }
+          },
+          "talent": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "firstName": {
+                "type": "string"
+              },
+              "lastName": {
+                "type": "string"
+              },
+              "secondLastName": {
+                "type": "string"
+              },
+              "headline": {
+                "type": "string"
+              },
+              "docType": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  }
+                }
+              },
+              "docNumber": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "phone": {
+                "type": "string"
+              }
+            }
+          },
+          "conditions": {
+            "type": "object",
+            "properties": {
+              "workModality": {
+                "type": "string"
+              },
+              "duration": {
+                "type": "string"
+              },
+              "contract": {
+                "type": "string"
+              },
+              "emo": {
+                "type": "boolean"
+              },
+              "sctr": {
+                "type": "boolean"
+              },
+              "laptop": {
+                "type": "boolean"
+              }
+            }
+          },
+          "confirmedBy": {
+            "type": "string"
+          },
+          "confirmedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
       }
     },
     "responses": {
@@ -407,6 +788,100 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/requirements": {
+      "post": {
+        "summary": "Publicar requerimientos de BDT",
+        "description": "Requiere requirements.write. Último estado de cada RQ (lote de hasta 50) con vacantes y postulantes; IGDT lo muestra en solo lectura. Un envío con updatedAt más viejo que el guardado se ignora (applied=false). deleted=true lo quita de la bandeja.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "items": {
+                      "$ref": "#/components/schemas/Requirement"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado por elemento",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncResults"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/hires": {
+      "post": {
+        "summary": "Candidatos confirmados (solicitudes de ingreso)",
+        "description": "Requiere hires.write. active=true crea o actualiza la solicitud de ingreso del candidato (o la reabre si estaba cancelada); active=false la cancela si aún no se completó. Idempotente. Los datos personales viajan por TLS y se guardan cifrados.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "items": {
+                      "$ref": "#/components/schemas/Hire"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado por elemento",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncResults"
                 }
               }
             }
