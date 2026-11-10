@@ -62,7 +62,8 @@ func TestFormPDF(t *testing.T) {
 	c := &formContext{req: map[string]any{"talent": map[string]any{"firstName": "José", "lastName": "Núñez"},
 		"client": map[string]any{"label": "Cliente Ñandú"}, "requirement": map[string]any{"code": "RQ-1", "title": "Diseño"}},
 		forms: &f, labels: map[string]ports.CatalogLabel{u1: {Code: "PEN", Label: "Planilla"}},
-		settings: &HireFormSettings{Company: "Geeky", TaxID: "20608337602"}, manager: "Gestora", issued: fixedNow(), withPay: true}
+		settings: &HireFormSettings{}, manager: "Gestora", issued: fixedNow(), withPay: true,
+		print: &printStyle{style: HireFormStyle{}.withDefaults(), company: "Geeky"}}
 	for _, form := range FormCodes {
 		b, err := forms.Renderer{}.Render(c.build(form))
 		if dir := os.Getenv("PDF_OUT"); dir != "" && err == nil {
@@ -78,3 +79,37 @@ func TestFormPDF(t *testing.T) {
 }
 
 func fixedNow() (t time.Time) { return time.Date(2026, 11, 10, 10, 0, 0, 0, time.UTC) }
+
+func TestFormStyle(t *testing.T) {
+	st := HireFormStyle{Primary: "#112233", Forms: map[string]FormHeaderStyle{"USERS": {Code: "X-1"}}}
+	if err := st.validate(); err != nil {
+		t.Fatal(err)
+	}
+	w := st.withDefaults()
+	if w.Primary != "#112233" || w.Border != "#1083C6" || w.Forms["USERS"].Code != "X-1" || w.Forms["USERS"].Version != "01" || w.Forms["FMI"].Code != "FT-GTH-12" {
+		t.Fatalf("defaults: %+v", w)
+	}
+	if (HireFormStyle{Primary: "azul"}).validate() == nil || (HireFormStyle{LogoSource: "X"}).validate() == nil ||
+		(HireFormStyle{Forms: map[string]FormHeaderStyle{"OTRO": {}}}).validate() == nil {
+		t.Fatal("formato inválido aceptado")
+	}
+	// vista previa con datos de ejemplo y logo (PDF_OUT=dir para revisarlos)
+	raw, _ := os.ReadFile(os.Getenv("PDF_LOGO"))
+	logo, _ := normalizeLogo(raw)
+	ps := &printStyle{style: HireFormStyle{}.withDefaults(), company: "Fractal", logo: logo, logoType: "PNG"}
+	if len(logo) == 0 {
+		ps.logoType = ""
+	}
+	for _, form := range FormCodes {
+		b, err := forms.Renderer{}.Render(sampleContext(ps, "Cris Alan Bonifaz Menacho").build(form))
+		if dir := os.Getenv("PDF_OUT"); dir != "" && err == nil {
+			_ = os.WriteFile(dir+"/sample_"+form+".pdf", b, 0o600)
+		}
+		if err != nil || !bytes.HasPrefix(b, []byte("%PDF")) {
+			t.Fatalf("%s: %v", form, err)
+		}
+	}
+	if got := longDateES(fixedNow()); got != "10 de noviembre de 2026" {
+		t.Fatal(got)
+	}
+}

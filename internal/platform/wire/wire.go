@@ -89,7 +89,7 @@ func Build(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, erro
 		Notifications: notifications,
 		Catalogs:      &app.CatalogService{Repo: mysql.CatalogRepo{Store: store}},
 		Selection: &app.SelectionService{Repo: mysql.SelectionRepo{Store: store}, Cipher: cipher, Notifier: notifications, Features: features,
-			Renderer: forms.Renderer{}, Mail: mail, BDT: bdt.New(cfg.BDTAPIURL), AppURL: cfg.PublicAppURL},
+			Renderer: forms.Renderer{}, Mail: mail, BDT: bdt.New(cfg.BDTAPIURL), AppURL: cfg.PublicAppURL, Storage: files, Files: fileRepo},
 		Features:     features,
 		Versions:     versions,
 		Support:      &app.SupportService{Repo: mysql.SupportRepo{Store: store}, Cipher: cipher, Storage: files, Notifier: notifications},

@@ -22,6 +22,9 @@ type HireFormsRepository interface {
 	HireRevoke(ctx context.Context, m Meta, tenantID uint64, requestID, reason string) error
 	HireFormSetting(ctx context.Context, tenantID uint64) (json.RawMessage, error)
 	HireFormSettingSave(ctx context.Context, m Meta, tenantID uint64, recipients json.RawMessage, ccManager bool, graceDays int, domain string) error
+	HireFormStyle(ctx context.Context, tenantID uint64) (json.RawMessage, error)
+	HireFormStyleSave(ctx context.Context, m Meta, tenantID uint64, style json.RawMessage, clearLogo bool) error
+	HireFormLogoSet(ctx context.Context, m Meta, tenantID uint64, fileUUID string) error
 	HireFormDispatchAdd(ctx context.Context, actorID, tenantID uint64, requestID, form, reason string, recipients []string, status, errText string) error
 	BDTLinkSet(ctx context.Context, tenantID, apiKeyID uint64, keyEnc []byte) error
 	BDTLinkClear(ctx context.Context, tenantID, apiKeyID uint64) error
@@ -31,29 +34,69 @@ type HireFormsRepository interface {
 
 // ---- Fichas en PDF ----
 
-// FormField: una fila etiqueta/valor de una ficha.
-type FormField [2]string // etiqueta, valor
-
-
-// FormSection: bloque de una ficha (título y filas; Rows para tablas como la lista de software).
-type FormSection struct {
-	Title  string
-	Fields []FormField
-	Header []string
-	Rows   [][]string
+// FormStyle: colores de las fichas (#RRGGBB). Primary: barras de sección y cabeceras de tabla; HeaderText: su texto;
+// Border: bordes de la cabecera y de la ficha de ingreso, y la línea de firma; LabelBg: fondo de las etiquetas;
+// Title: color del título de la ficha de ingreso.
+type FormStyle struct {
+	Primary, HeaderText, Border, LabelBg, Title string
 }
 
-// FormDoc: ficha lista para imprimir (código del formato, título, empresa y secciones).
-type FormDoc struct {
-	Code, Title, Company, Subtitle string
-	Sections                       []FormSection
-	Footer                         string
-	Logo                           []byte // PNG/JPG opcional
-	LogoType                       string // "PNG" | "JPG"
+// FormHeader: datos del formato (cuadro de la cabecera).
+type FormHeader struct {
+	Code, Version, Date, Title string
+}
+
+// FormCheck: casilla marcada o no con su texto.
+type FormCheck struct {
+	Label string
+	On    bool
+}
+
+// FMIPrint: FT-GTH-12 Formulario de movimiento (ingreso). Los montos ya vienen con moneda; "" = vacío.
+type FMIPrint struct {
+	Name, Client, Modality, Reason, Position, Schedule string
+	Base, Mobility, Bonus                              string
+	HasBase, HasMobility, Monthly, Quarterly           bool
+	Start, End, Project, Object, Sunat, Site, Notes    string
+	Locator                                            bool // locación de servicios (RxH): sin cabecera, título subrayado
+}
+
+// EquipmentPrint: FT-GS-03 Solicitud de instalación de software y hardware.
+type EquipmentPrint struct {
+	Name, Client, Area, Position, DocNumber, Phone string
+	RequestDate, DeliveryDate                      string
+	Types                                          []FormCheck
+	Processor, RAM, Disk, Brand                    string
+	AnnexFixed, AnnexSoftphone                     bool
+	Mobile, MobileInternet                         bool
+	Accessories, Notes                             string
+	Software                                       [][2]string // producto, versión
+}
+
+// UsersPrint: FT-GS-01 Solicitud de creación, modificación o desactivación de usuarios.
+type UsersPrint struct {
+	RequesterName, RequesterArea, RequesterPosition, RequesterAnnex, Date string
+	Name, Username, Email, Area, Notes                                    string
+}
+
+// FormPrint: una ficha lista para imprimir con el formato del tenant.
+type FormPrint struct {
+	Form      string // FMI | EQUIPMENT | USERS
+	Header    FormHeader
+	Style     FormStyle
+	Logo      []byte // PNG/JPG; sin logo se escribe Company en su lugar
+	LogoType  string // "PNG" | "JPG"
+	Company   string
+	Signer    string // nombre del gestor que firma
+	SignerPos string // cargo del firmante
+	Footer    string // pie completo ("Generado con … — Fecha de emisión: …")
+	FMI       *FMIPrint
+	Equipment *EquipmentPrint
+	Users     *UsersPrint
 }
 
 type FormRenderer interface {
-	Render(doc FormDoc) ([]byte, error)
+	Render(doc FormPrint) ([]byte, error)
 }
 
 // ---- Correo saliente ----

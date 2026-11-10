@@ -3,6 +3,11 @@
 Formato: `## vMAYOR.MENOR — AAAA-MM-DD`, seguido de los cambios en viñetas (español). Al publicar una versión se
 sube `VERSION` y se agrega su sección aquí: la API la registra al desplegarse en cada ambiente y la notifica.
 
+## v0.6 — 2026-11-10
+- Las fichas de ingreso en PDF tienen ahora el diseño de los formatos originales del FMI: cabecera con logo, título y código/versión/fecha; FT-GTH-12 Formulario de movimiento (estructura salarial con casillas, declaración en SUNAT, movimiento y cese), FT-GS-03 Solicitud de instalación de software y hardware y FT-GS-01 Solicitud de creación, modificación o desactivación de usuarios, con la firma del gestor al pie. En locación de servicios la ficha de ingreso sale sin cabecera, como el original.
+- Administración › Formato de fichas (administrador de la empresa) y Empresas › Formato de fichas (Super Admin): colores, logo propio o de la marca, título, código, versión y fecha de cada formato, cargo del firmante, anexo por defecto y texto del pie, con vista previa y opción de volver al original.
+- La solicitud de usuarios propone el usuario como nombre.apellido y permite indicar el área y anexo del solicitante.
+
 ## v0.5 — 2026-11-10
 - Perfil completo del candidato leído de BDT: contacto, experiencia, estudios, habilidades, idiomas, evaluaciones, CV en español e inglés (con la marca de la empresa) y CV original, y sus postulaciones a otros requerimientos. Se abre con «Ver perfil» en la solicitud o desde el pipeline del RQ.
 - Fichas de ingreso en la solicitud: FT-GTH-12 Formulario de Ingreso, FT-GS-03 Solicitud de Hardware y Software (con procesador, RAM, disco, anexo, celular, accesorios y software) y FT-GS-01 Solicitud de Creación de Usuarios. Llegan propuestas, se guardan como borrador, se ven en PDF y al confirmarlas se registra el ingreso y cada ficha se envía a sus destinatarios.

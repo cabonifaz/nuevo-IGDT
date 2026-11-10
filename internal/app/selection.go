@@ -25,6 +25,8 @@ type SelectionService struct {
 	Renderer ports.FormRenderer // fichas en PDF
 	Mail     ports.MailSender   // envío de las fichas a sus destinatarios
 	BDT      ports.BDTReader    // perfil, CV y postulaciones del candidato en BDT
+	Storage  ports.FileStorage  // logo de las fichas
+	Files    ports.FileRepository
 	AppURL   string
 }
 
@@ -525,7 +527,7 @@ func (s *SelectionService) Hire(ctx context.Context, p *domain.Principal, ip, id
 	}
 	m["formSettings"] = map[string]any{"corporateDomain": st.CorporateDomain, "editGraceDays": st.EditGraceDays,
 		"recipients": map[string]int{"FMI": len(st.Recipients["FMI"]), "EQUIPMENT": len(st.Recipients["EQUIPMENT"]), "USERS": len(st.Recipients["USERS"])},
-		"mailer": s.Mail != nil && mailerEnabled(s.Mail)}
+		"mailer":     s.Mail != nil && mailerEnabled(s.Mail)}
 	switch m["status"] {
 	case "COMPLETED", "REVOKED":
 		hire, err := s.hireOf(ctx, p, tid, id)

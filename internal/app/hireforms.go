@@ -34,7 +34,6 @@ type HireFormSettings struct {
 	TaxID           string              `json:"taxId,omitempty"`
 }
 
-
 func (s *SelectionService) settings(ctx context.Context, tid uint64) (*HireFormSettings, error) {
 	doc, err := s.Repo.HireFormSetting(ctx, tid)
 	if err != nil {
@@ -111,6 +110,7 @@ type formContext struct {
 	manager  string
 	issued   time.Time
 	withPay  bool
+	print    *printStyle // formato y logo del tenant
 }
 
 func (c *formContext) lab(id string) string { return c.labels[id].Label }
@@ -160,105 +160,125 @@ func (c *formContext) document() string {
 }
 
 func (c *formContext) footer() string {
-	return fmt.Sprintf("Emitido el %s por %s · IGDT", c.issued.Format("02/01/2006 15:04"), c.manager)
+	return fmt.Sprintf("%s © %d — Fecha de emisión: %s", c.print.style.FooterText, c.issued.Year(), longDateES(c.issued))
 }
 
-func (c *formContext) build(form string) ports.FormDoc {
-	m := formMeta[form]
-	h := c.forms.Hire
-	company := c.settings.Company
-	if c.settings.TaxID != "" {
-		company += " · RUC " + c.settings.TaxID
+// header: datos del formato configurados por el tenant (código, versión, fecha y título).
+func (c *formContext) header(form string) ports.FormHeader {
+	h := c.print.style.Forms[form]
+	return ports.FormHeader{Code: h.Code, Version: h.Version, Date: h.Date, Title: h.Title}
+}
+
+// currencySymbol: como en las fichas originales ("S/.565.00").
+func currencySymbol(code string) string {
+	switch code {
+	case "PEN":
+		return "S/."
+	case "USD":
+		return "US$"
+	case "EUR":
+		return "€"
+	case "":
+		return ""
 	}
-	rq := strings.TrimSpace(str(c.req, "requirement", "code") + " · " + str(c.req, "requirement", "title"))
-	doc := ports.FormDoc{Code: m.Code, Title: m.Title, Company: company, Footer: c.footer(),
-		Subtitle: "Requerimiento " + strings.Trim(rq, " ·")}
+	return code + " "
+}
+
+func amount(sym string, v float64) string {
+	if v <= 0 {
+		return ""
+	}
+	return sym + formatAmount(v)
+}
+
+func (c *formContext) build(form string) ports.FormPrint {
+	st := c.print.style
+	h := c.forms.Hire
+	out := ports.FormPrint{Form: form, Header: c.header(form), Logo: c.print.logo, LogoType: c.print.logoType,
+		Company: c.print.company, Signer: c.manager, SignerPos: st.SignerTitle, Footer: c.footer(),
+		Style: ports.FormStyle{Primary: st.Primary, HeaderText: st.HeaderText, Border: st.Border, LabelBg: st.LabelBg, Title: st.Title}}
 	client := str(c.req, "client", "label")
 	switch form {
 	case "FMI":
 		contract := c.labels[h.ContractID]
 		rxh := contract.Str1 == "RXH"
-		if rxh {
-			doc.Title += " — Locación de servicios"
+		sym := currencySymbol(c.labels[h.CurrencyID].Code)
+		f := &ports.FMIPrint{Name: c.talentName(), Client: client, Modality: contract.Label, Reason: c.lab(h.ReasonID),
+			Position: h.Position, Schedule: h.Schedule, Start: fmtDate(h.StartDate), End: fmtDate(h.EndDate),
+			Project: h.ProjectService, Object: h.ContractObject, Sunat: yesNo(h.SunatDeclared && !rxh), Notes: h.Notes, Locator: rxh}
+		if h.EndDate == "" {
+			f.End = "Indeterminado"
 		}
-		cur := c.labels[h.CurrencyID].Code
-		pay := []ports.FormField{{"Moneda", cur}}
+		if h.SunatDeclared && !rxh {
+			f.Site = c.lab(h.SiteID)
+		}
 		switch {
 		case !c.withPay:
-			pay = append(pay, ports.FormField{"Remuneración", "Reservado"})
+			f.Base = "Reservado"
 		case h.Pay != nil && rxh:
-			pay = append(pay, ports.FormField{"Honorario", money(cur, h.Pay.Fee)})
+			f.Base, f.HasBase = amount(sym, h.Pay.Fee), h.Pay.Fee > 0
 		case h.Pay != nil:
-			pay = append(pay, ports.FormField{"Monto base", money(cur, h.Pay.Base)}, ports.FormField{"Movilidad", money(cur, h.Pay.Mobility)},
-				ports.FormField{"Bono trimestral", money(cur, h.Pay.Quarterly)}, ports.FormField{"Bono semestral", money(cur, h.Pay.Semiannual)})
+			f.Base, f.HasBase = amount(sym, h.Pay.Base), h.Pay.Base > 0
+			f.Mobility, f.HasMobility = amount(sym, h.Pay.Mobility), h.Pay.Mobility > 0
+			f.Quarterly = h.Pay.Quarterly > 0
+			bonus := []string{}
+			if h.Pay.Quarterly > 0 {
+				bonus = append(bonus, amount(sym, h.Pay.Quarterly))
+			}
+			if h.Pay.Semiannual > 0 {
+				bonus = append(bonus, amount(sym, h.Pay.Semiannual)+" (semestral)")
+			}
+			f.Bonus = strings.Join(bonus, " · ")
 		}
-		end := fmtDate(h.EndDate)
-		if h.EndDate == "" {
-			end = "Indeterminado"
-		}
-		sunat := yesNo(h.SunatDeclared)
-		if rxh {
-			sunat = "No"
-		}
-		doc.Sections = []ports.FormSection{
-			{Title: "Datos del colaborador", Fields: []ports.FormField{{"Nombres y apellidos", c.talentName()}, {"Documento", c.document()},
-				{"Correo", str(c.req, "talent", "email")}, {"Teléfono", str(c.req, "talent", "phone")}}},
-			{Title: "Ingreso", Fields: []ports.FormField{{"Unidad / área", c.lab(h.AreaID)}, {"Modalidad de contrato", contract.Label},
-				{"Motivo de ingreso", c.lab(h.ReasonID)}, {"Cargo", h.Position}, {"Horario de trabajo", h.Schedule}, {"Cliente", client},
-				{"Proyecto / servicio", h.ProjectService}, {"Objeto del contrato", h.ContractObject}, {"Ubicación", h.Location},
-				{"Fecha de inicio", fmtDate(h.StartDate)}, {"Fecha de término", end}, {"Declarado en SUNAT", sunat},
-				{"Sede a declarar", c.lab(h.SiteID)}, {"Cuenta con equipo propio", yesNo(h.HasEquipment)}}},
-			{Title: "Estructura salarial", Fields: pay},
-		}
-		if h.Notes != "" {
-			doc.Sections = append(doc.Sections, ports.FormSection{Title: "Observaciones", Fields: []ports.FormField{{"Notas", h.Notes}}})
-		}
-		doc.Sections = append(doc.Sections, ports.FormSection{Title: "Aprobación", Fields: []ports.FormField{
-			{"Gestor de servicios", c.manager}, {"Fecha de emisión", c.issued.Format("02/01/2006")}}})
+		out.FMI = f
 	case "EQUIPMENT":
 		e := c.forms.Equipment
 		if e == nil {
 			e = &EquipmentRequest{}
 		}
-		types := []string{}
+		types := []ports.FormCheck{{Label: "PC"}, {Label: "Laptop"}}
 		for _, t := range e.Types {
-			types = append(types, c.lab(t))
+			l := c.labels[t]
+			key := strings.ToUpper(l.Code + " " + l.Label)
+			switch {
+			case strings.Contains(key, "LAPTOP") || strings.Contains(key, "PORTÁTIL") || strings.Contains(key, "PORTATIL"):
+				types[1].On = true
+			case l.Code == "PC" || strings.Contains(key, "PC") || strings.Contains(key, "ESCRITORIO") || strings.Contains(key, "DESKTOP"):
+				types[0].On = true
+			case l.Label != "":
+				types = append(types, ports.FormCheck{Label: l.Label, On: true})
+			}
 		}
-		annex := map[string]string{"FIXED": "Fijo", "SOFTPHONE": "Softphone"}[e.Annex]
-		rows := [][]string{}
-		for _, sw := range e.Software {
-			rows = append(rows, []string{sw.Product, sw.Version})
+		doc := str(c.req, "talent", "docNumber")
+		if dt := str(c.req, "talent", "docType", "label"); dt != "" && !strings.EqualFold(dt, "DNI") && doc != "" {
+			doc = dt + " " + doc
 		}
-		doc.Sections = []ports.FormSection{
-			{Title: "Solicitante", Fields: []ports.FormField{{"Gestor de servicios", c.manager}, {"Fecha de solicitud", fmtDate(e.RequestDate)},
-				{"Fecha de entrega", fmtDate(e.DeliveryDate)}}},
-			{Title: "Colaborador", Fields: []ports.FormField{{"Nombres y apellidos", c.talentName()}, {"Documento", c.document()},
-				{"Teléfono", str(c.req, "talent", "phone")}, {"Cliente", client}, {"Área", c.lab(h.AreaID)}, {"Cargo", h.Position},
-				{"Fecha de inicio", fmtDate(h.StartDate)}}},
-			{Title: "Hardware", Fields: []ports.FormField{{"Tipo de equipo", strings.Join(types, ", ")}, {"Procesador", e.Processor},
-				{"Memoria RAM", e.RAM}, {"Disco duro", e.Disk}, {"Marca", e.Brand}, {"Anexo", annex}, {"Celular", yesNo(e.Mobile)},
-				{"Internet móvil", yesNo(e.MobileInternet)}, {"Accesorios", e.Accessories}}},
-			{Title: "Software", Header: []string{"Producto", "Versión"}, Rows: rows},
+		sw := [][2]string{}
+		for _, x := range e.Software {
+			sw = append(sw, [2]string{x.Product, x.Version})
 		}
-		if e.Notes != "" {
-			doc.Sections = append(doc.Sections, ports.FormSection{Title: "Observaciones", Fields: []ports.FormField{{"Notas", e.Notes}}})
-		}
+		out.Equipment = &ports.EquipmentPrint{Name: c.talentName(), Client: client, Area: c.lab(h.AreaID), Position: h.Position,
+			DocNumber: doc, Phone: str(c.req, "talent", "phone"), RequestDate: fmtDate(e.RequestDate), DeliveryDate: fmtDate(e.DeliveryDate),
+			Types: types, Processor: e.Processor, RAM: e.RAM, Disk: e.Disk, Brand: e.Brand,
+			AnnexFixed: e.Annex == "FIXED", AnnexSoftphone: e.Annex == "SOFTPHONE", Mobile: e.Mobile, MobileInternet: e.MobileInternet,
+			Accessories: e.Accessories, Notes: e.Notes, Software: sw}
 	case "USERS":
 		u := c.forms.Users
 		if u == nil {
 			u = &UserRequest{}
 		}
-		doc.Sections = []ports.FormSection{
-			{Title: "Solicitante", Fields: []ports.FormField{{"Nombre", c.manager}, {"Cargo", "Gestor de servicios"},
-				{"Fecha de solicitud", c.issued.Format("02/01/2006")}}},
-			{Title: "Creación de usuarios", Fields: []ports.FormField{{"Nombres y apellidos", c.talentName()}, {"Nombre de usuario", u.Username},
-				{"Correo", u.Email}, {"Área", c.lab(h.AreaID)}, {"Cargo", h.Position}, {"Cliente", client}, {"Fecha de inicio", fmtDate(h.StartDate)}}},
+		area, annex := u.RequesterArea, u.RequesterAnnex
+		if area == "" {
+			area = c.lab(h.AreaID)
 		}
-		if u.Notes != "" {
-			doc.Sections = append(doc.Sections, ports.FormSection{Title: "Observaciones", Fields: []ports.FormField{{"Notas", u.Notes}}})
+		if annex == "" {
+			annex = st.RequesterAnnex
 		}
+		out.Users = &ports.UsersPrint{RequesterName: c.manager, RequesterArea: area, RequesterPosition: st.SignerTitle,
+			RequesterAnnex: annex, Date: c.issued.Format("02/01/2006"), Name: c.talentName(), Username: u.Username,
+			Email: u.Email, Area: c.lab(h.AreaID), Notes: u.Notes}
 	}
-	return doc
+	return out
 }
 
 // context arma lo necesario para imprimir. forms nil = las del ingreso confirmado o, si no hay, las del borrador.
@@ -305,7 +325,11 @@ func (s *SelectionService) formContext(ctx context.Context, p *domain.Principal,
 	if manager == "" {
 		manager = str(req, "assignedName")
 	}
-	return &formContext{req: req, forms: forms, labels: labels, settings: st, manager: manager, issued: time.Now().In(limaTZ()), withPay: withPay}, nil
+	ps, err := s.printStyle(ctx, tid, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &formContext{req: req, forms: forms, labels: labels, settings: st, manager: manager, issued: time.Now().In(limaTZ()), withPay: withPay, print: ps}, nil
 }
 
 func limaTZ() *time.Location {
@@ -406,7 +430,7 @@ func (s *SelectionService) dispatch(ctx context.Context, p *domain.Principal, ti
 			_ = s.Repo.HireFormDispatchAdd(ctx, p.UserID, tid, requestID, form, reason, nil, "NO_RECIPIENTS", "")
 			continue
 		}
-		m := formMeta[form]
+		m := c.header(form)
 		subject := fmt.Sprintf("%s | %s | %s | %s · %s", reasonSubject[reason], rq, client, m.Code, c.talentName())
 		var text strings.Builder
 		fmt.Fprintf(&text, "%s\n\nColaborador: %s\nCliente: %s\nRequerimiento: %s\nCargo: %s\nFecha de inicio: %s\n",

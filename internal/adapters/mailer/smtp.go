@@ -164,4 +164,3 @@ func (m LogMailer) Send(_ context.Context, msg ports.Mail) error {
 	m.Log.Info("correo no enviado: sin proveedor SMTP", "subject", msg.Subject, "to_domains", domains, "attachments", len(msg.Attachments))
 	return ports.ErrNoMailer
 }
-

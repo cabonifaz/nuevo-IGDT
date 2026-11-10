@@ -72,9 +72,11 @@ type EquipmentRequest struct {
 
 // UserRequest: creación de usuario de red y correo (FT-GS-01).
 type UserRequest struct {
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Notes    string `json:"notes"`
+	Username       string `json:"username"`
+	Email          string `json:"email"`
+	Notes          string `json:"notes"`
+	RequesterArea  string `json:"requesterArea,omitempty"`  // área del solicitante (por defecto la del ingreso)
+	RequesterAnnex string `json:"requesterAnnex,omitempty"` // anexo del solicitante (por defecto el del formato)
 }
 
 // HireForms: las tres fichas de la solicitud. Equipment/Users nil = esa ficha no aplica.
@@ -124,7 +126,7 @@ func (f *HireForms) validate(strict bool) error {
 	}
 	if u := f.Users; u != nil {
 		u.Username, u.Email = strings.TrimSpace(u.Username), strings.TrimSpace(u.Email)
-		bad = bad || !maxLen(1000, u.Notes) || (u.Username != "" && !usernameRe.MatchString(u.Username)) || len(u.Email) > 150
+		bad = bad || !maxLen(1000, u.Notes) || !maxLen(80, u.RequesterArea) || !maxLen(20, u.RequesterAnnex) || (u.Username != "" && !usernameRe.MatchString(u.Username)) || len(u.Email) > 150
 		if u.Email != "" {
 			if a, err := mail.ParseAddress(u.Email); err != nil || a.Address != u.Email {
 				bad = true
@@ -558,4 +560,3 @@ func (s *SelectionService) HireEvents(ctx context.Context, tenantID, since uint6
 	}
 	return out, nil
 }
-
