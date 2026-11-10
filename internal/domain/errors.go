@@ -47,7 +47,7 @@ func statusFor(code string) int {
 		return http.StatusConflict
 	case "RATE_LIMITED":
 		return http.StatusTooManyRequests
-	case "BDT_NOT_LINKED", "BDT_UNAVAILABLE":
+	case "BDT_NOT_LINKED", "BDT_UNAVAILABLE", "BDT_SEARCH_DISABLED":
 		return http.StatusServiceUnavailable
 	case "INTERNAL":
 		return http.StatusInternalServerError

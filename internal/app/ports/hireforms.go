@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/url"
 )
 
 // HireUpdate: corrección del ingreso confirmado. PayEnc nil = la remuneración no cambia.
@@ -135,6 +136,7 @@ type BDTReader interface {
 	Talent(ctx context.Context, key, talentID string) (json.RawMessage, error)
 	TalentFile(ctx context.Context, key, talentID, fileID string) (contentType string, body io.ReadCloser, err error)
 	CVSource(ctx context.Context, key, talentID, lang string) (json.RawMessage, error)
+	SearchTalents(ctx context.Context, key string, q url.Values) (json.RawMessage, error)
 }
 
 // CatalogLabel: código y etiqueta (es) de un ítem de catálogo.

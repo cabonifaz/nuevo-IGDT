@@ -7,8 +7,11 @@ import (
 	"io"
 	"log/slog"
 	"net/mail"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/cabonifaz/nuevo-IGDT/internal/app/ports"
 	"github.com/cabonifaz/nuevo-IGDT/internal/domain"
@@ -587,4 +590,58 @@ func (s *SelectionService) TalentCVSource(ctx context.Context, p *domain.Princip
 		return nil, err
 	}
 	return s.BDT.CVSource(ctx, key, talentID, lang)
+}
+
+// TalentSearch: filtros de la búsqueda en el banco de talentos de BDT.
+type TalentSearch struct {
+	Q, Position, Education, Skill, English string
+	MinYears                               string
+	Page, PageSize                         int
+}
+
+var englishLevels = map[string]bool{"BASIC": true, "INTERMEDIATE": true, "ADVANCED": true, "NATIVE": true}
+
+// SearchTalents: lista y búsqueda en todo el banco de talentos del tenant en BDT, solo lectura (los gestores no crean
+// ni cargan talentos; eso se hace en BDT).
+func (s *SelectionService) SearchTalents(ctx context.Context, p *domain.Principal, f TalentSearch) (json.RawMessage, error) {
+	tid, err := tenantOf(p)
+	if err != nil {
+		return nil, err
+	}
+	q := url.Values{}
+	for k, v := range map[string]string{"q": f.Q, "position": f.Position, "education": f.Education, "skill": f.Skill} {
+		v = strings.TrimSpace(v)
+		if utf8.RuneCountInString(v) > 150 {
+			return nil, domain.ErrValidation
+		}
+		if v != "" {
+			q.Set(k, v)
+		}
+	}
+	if e := strings.ToUpper(strings.TrimSpace(f.English)); e != "" {
+		if !englishLevels[e] {
+			return nil, domain.ErrValidation
+		}
+		q.Set("english", e)
+	}
+	if m := strings.TrimSpace(f.MinYears); m != "" {
+		n, err := strconv.ParseFloat(m, 64)
+		if err != nil || n < 0 || n > 60 {
+			return nil, domain.ErrValidation
+		}
+		q.Set("minYears", strconv.FormatFloat(n, 'f', -1, 64))
+	}
+	if f.Page < 1 {
+		f.Page = 1
+	}
+	if f.PageSize < 1 || f.PageSize > 50 {
+		f.PageSize = 20
+	}
+	q.Set("page", strconv.Itoa(f.Page))
+	q.Set("pageSize", strconv.Itoa(f.PageSize))
+	key, err := s.bdtKey(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
+	return s.BDT.SearchTalents(ctx, key, q)
 }

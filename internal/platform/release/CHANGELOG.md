@@ -3,6 +3,9 @@
 Formato: `## vMAYOR.MENOR — AAAA-MM-DD`, seguido de los cambios en viñetas (español). Al publicar una versión se
 sube `VERSION` y se agrega su sección aquí: la API la registra al desplegarse en cada ambiente y la notifica.
 
+## v0.7 — 2026-11-10
+- Selección (BDT) › Banco de talentos: los gestores y el administrador listan y buscan en todo el banco de talentos de BDT (nombre o titular, puesto, habilidad técnica, carrera, inglés mínimo y años de experiencia) y abren el perfil completo de cualquier talento con sus CV y documentos, aunque no sea candidato de un RQ. Solo lectura: los talentos se crean y se cargan en BDT. Requiere BDT 1.9 (alcance talent.search de la llave automática).
+
 ## v0.6 — 2026-11-10
 - Perfil del candidato: los CV en español e inglés se generan en IGDT con la plantilla y la marca de BDT (y la traducción de BDT para el inglés) aunque nadie los haya guardado en BDT; si BDT tiene uno guardado y vigente se muestra ese. Se agregan los documentos del talento (certificados, títulos, antecedentes) en solo lectura.
 - Solicitudes de ingreso: hay que tomarlas antes de completar las fichas y solo el gestor asignado puede guardar, confirmar, corregir, revocar o reenviar. Otro gestor no puede quitársela; el administrador de la empresa la reasigna (Reasignar).

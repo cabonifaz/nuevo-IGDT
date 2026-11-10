@@ -93,3 +93,51 @@ func (c *Client) CVSource(ctx context.Context, key, talentID, lang string) (json
 	}
 	return b, nil
 }
+
+const maxSearch = 2 << 20
+
+// SearchTalents: búsqueda en todo el banco de talentos del tenant (solo lectura; alcance talent.search de la llave).
+// Sin ese alcance (llave anterior a BDT 1.9) responde BDT_SEARCH_DISABLED.
+func (c *Client) SearchTalents(ctx context.Context, key string, q url.Values) (json.RawMessage, error) {
+	if !c.Enabled() {
+		return nil, domain.NewError("BDT_NOT_LINKED")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/integration/v1/talents?"+q.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Api-Key", key)
+	res, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, domain.NewError("BDT_UNAVAILABLE")
+	}
+	defer res.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(res.Body, maxSearch+1))
+	if err != nil {
+		return nil, domain.NewError("BDT_UNAVAILABLE")
+	}
+	switch {
+	case res.StatusCode == http.StatusForbidden || res.StatusCode == http.StatusNotFound || res.StatusCode == http.StatusMethodNotAllowed:
+		var e struct {
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+			Code string `json:"code"`
+		}
+		_ = json.Unmarshal(b, &e)
+		if e.Error.Code == "APIKEY_SCOPE" || e.Code == "APIKEY_SCOPE" || res.StatusCode != http.StatusForbidden {
+			return nil, domain.NewError("BDT_SEARCH_DISABLED")
+		}
+		return nil, domain.NewError("BDT_NOT_LINKED")
+	case res.StatusCode == http.StatusUnauthorized:
+		return nil, domain.NewError("BDT_NOT_LINKED")
+	case res.StatusCode == http.StatusUnprocessableEntity:
+		return nil, domain.ErrValidation
+	case res.StatusCode >= 300:
+		return nil, domain.NewError("BDT_UNAVAILABLE")
+	}
+	if len(b) > maxSearch || !json.Valid(b) {
+		return nil, fmt.Errorf("respuesta de BDT inválida")
+	}
+	return b, nil
+}

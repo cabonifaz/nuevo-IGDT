@@ -5,6 +5,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -217,6 +218,25 @@ func (s *Server) selAssignees(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) selTalentCVSource(w http.ResponseWriter, r *http.Request) {
 	out, err := s.Selection.TalentCVSource(r.Context(), principal(r), chi.URLParam(r, "id"), r.URL.Query().Get("lang"))
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	noStore(w)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(out)
+}
+
+// selSearchTalents: GET /tenant/talents?q=&position=&education=&skill=&english=&minYears=&page=&pageSize= — banco de
+// talentos de BDT en solo lectura.
+func (s *Server) selSearchTalents(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	page, _ := strconv.Atoi(q.Get("page"))
+	size, _ := strconv.Atoi(q.Get("pageSize"))
+	out, err := s.Selection.SearchTalents(r.Context(), principal(r), app.TalentSearch{
+		Q: q.Get("q"), Position: q.Get("position"), Education: q.Get("education"), Skill: q.Get("skill"),
+		English: q.Get("english"), MinYears: q.Get("minYears"), Page: page, PageSize: size,
+	})
 	if err != nil {
 		s.writeErr(w, r, err)
 		return
