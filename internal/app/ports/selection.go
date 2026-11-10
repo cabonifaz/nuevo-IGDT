@@ -52,6 +52,7 @@ type HireInput struct {
 	CurrencyID                                                                    string
 	SunatDeclared, HasEquipment                                                   bool
 	Equipment                                                                     []string
+	EquipmentRequest, UserRequest                                                 json.RawMessage // FT-GS-03 y FT-GS-01 (nil = no aplica)
 	PayEnc                                                                        []byte
 }
 
@@ -61,4 +62,5 @@ type HireRepository interface {
 	HireOf(ctx context.Context, m Meta, tenantID uint64, requestID string) (json.RawMessage, error)
 	Employees(ctx context.Context, m Meta, tenantID uint64) ([]json.RawMessage, error)
 	HireEvents(ctx context.Context, tenantID, since uint64, limit int) ([]CatalogChange, error)
+	HireFormsRepository
 }

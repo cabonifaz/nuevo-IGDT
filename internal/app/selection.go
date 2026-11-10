@@ -22,6 +22,10 @@ type SelectionService struct {
 	Cipher   ports.Cipher
 	Notifier *NotificationService
 	Features *FeatureService
+	Renderer ports.FormRenderer // fichas en PDF
+	Mail     ports.MailSender   // envío de las fichas a sus destinatarios
+	BDT      ports.BDTReader    // perfil, CV y postulaciones del candidato en BDT
+	AppURL   string
 }
 
 // SelectionRoles: roles que reciben los avisos de solicitudes de ingreso.
@@ -482,7 +486,7 @@ func (s *SelectionService) Hires(ctx context.Context, p *domain.Principal, statu
 	}
 	var st *string
 	if status != "" {
-		if !contains([]string{"PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"}, status) {
+		if !contains([]string{"PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED", "REVOKED"}, status) {
 			return nil, domain.ErrValidation
 		}
 		st = &status
@@ -512,14 +516,42 @@ func (s *SelectionService) Hire(ctx context.Context, p *domain.Principal, ip, id
 	}
 	out := decryptFields(s.Cipher, decryptNames(s.Cipher, doc), "docNumberEnc", "emailEnc", "phoneEnc")
 	var m map[string]any
-	if json.Unmarshal(out, &m) != nil || m["status"] != "COMPLETED" {
+	if json.Unmarshal(out, &m) != nil {
 		return out, nil
 	}
-	hire, err := s.hireOf(ctx, p, tid, id)
+	st, err := s.settings(ctx, tid)
 	if err != nil {
 		return nil, err
 	}
-	m["hire"] = hire
+	m["formSettings"] = map[string]any{"corporateDomain": st.CorporateDomain, "editGraceDays": st.EditGraceDays,
+		"recipients": map[string]int{"FMI": len(st.Recipients["FMI"]), "EQUIPMENT": len(st.Recipients["EQUIPMENT"]), "USERS": len(st.Recipients["USERS"])},
+		"mailer": s.Mail != nil && mailerEnabled(s.Mail)}
+	switch m["status"] {
+	case "COMPLETED", "REVOKED":
+		hire, err := s.hireOf(ctx, p, tid, id)
+		if err != nil {
+			return nil, err
+		}
+		if hire != nil {
+			delete(hire, "payEnc")
+			if f, err := s.formsOfHire(ctx, p, tid, id); err == nil && f != nil {
+				if !p.Has("employee.salary.read") {
+					f.Hire.Pay = nil
+				}
+				hire["forms"] = f
+			}
+		}
+		m["hire"] = hire
+	case "PENDING", "IN_PROGRESS":
+		f, d, err := s.draftOf(ctx, p, tid, id, p.Has("employee.salary.read"))
+		if err != nil {
+			return nil, err
+		}
+		if f != nil {
+			d["forms"] = f
+			m["draft"] = d
+		}
+	}
 	return json.Marshal(m)
 }
 

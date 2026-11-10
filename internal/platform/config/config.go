@@ -41,6 +41,11 @@ type Config struct {
 	// Push del sistema operativo (Web Push): claves VAPID generadas con go run ./cmd/vapid; sin claves queda apagado
 	VAPIDPublic, VAPIDPrivate, VAPIDSubject string
 
+	// API de BDT (lectura de candidatos con la llave que BDT entrega al conectar la integración)
+	BDTAPIURL string
+	// Correo saliente (SMTP); sin SMTP_HOST los envíos quedan registrados como pendientes de proveedor
+	SMTPHost, SMTPPort, SMTPUser, SMTPPassword, SMTPFrom, SMTPFromName string
+
 	RateGeneralPerMin int
 	RateAuthPerMin    int
 }
@@ -56,21 +61,24 @@ func Load() (Config, error) {
 		TrustProxy:   get("TRUST_PROXY", "false") == "true",
 		DBHost:       os.Getenv("DB_HOST"), DBPort: get("DB_PORT", "3306"), DBName: os.Getenv("DB_NAME"),
 		DBUser: os.Getenv("DB_USER"), DBPassword: os.Getenv("DB_PASSWORD"), DBTLS: os.Getenv("DB_TLS"),
-		JWTSecret:         os.Getenv("JWT_SECRET"),
-		AccessTTL:         minutes("ACCESS_TOKEN_MINUTES", 15),
-		RefreshTTL:        minutes("REFRESH_TOKEN_MINUTES", 60*12),
-		RememberTTL:       minutes("REMEMBER_ME_MINUTES", 60*24*30),
-		ReuseGrace:        intVal("REFRESH_REUSE_GRACE_SECONDS", 30),
-		DataKey:           os.Getenv("DATA_ENCRYPTION_KEY"),
-		BlindIndexKey:     os.Getenv("BLIND_INDEX_KEY"),
-		InviteTTL:         minutes("INVITATION_MINUTES", 60*72),
-		StoragePath:       get("STORAGE_PATH", "./data/files"),
-		DefaultTimezone:   get("DEFAULT_TIMEZONE", "America/Lima"),
-		EnvURLs:           os.Getenv("ENV_URLS"),
-		CommitSHA:         os.Getenv("RAILWAY_GIT_COMMIT_SHA"),
-		VAPIDPublic:       os.Getenv("VAPID_PUBLIC_KEY"),
-		VAPIDPrivate:      os.Getenv("VAPID_PRIVATE_KEY"),
-		VAPIDSubject:      os.Getenv("VAPID_SUBJECT"),
+		JWTSecret:       os.Getenv("JWT_SECRET"),
+		AccessTTL:       minutes("ACCESS_TOKEN_MINUTES", 15),
+		RefreshTTL:      minutes("REFRESH_TOKEN_MINUTES", 60*12),
+		RememberTTL:     minutes("REMEMBER_ME_MINUTES", 60*24*30),
+		ReuseGrace:      intVal("REFRESH_REUSE_GRACE_SECONDS", 30),
+		DataKey:         os.Getenv("DATA_ENCRYPTION_KEY"),
+		BlindIndexKey:   os.Getenv("BLIND_INDEX_KEY"),
+		InviteTTL:       minutes("INVITATION_MINUTES", 60*72),
+		StoragePath:     get("STORAGE_PATH", "./data/files"),
+		DefaultTimezone: get("DEFAULT_TIMEZONE", "America/Lima"),
+		EnvURLs:         os.Getenv("ENV_URLS"),
+		CommitSHA:       os.Getenv("RAILWAY_GIT_COMMIT_SHA"),
+		VAPIDPublic:     os.Getenv("VAPID_PUBLIC_KEY"),
+		VAPIDPrivate:    os.Getenv("VAPID_PRIVATE_KEY"),
+		VAPIDSubject:    os.Getenv("VAPID_SUBJECT"),
+		BDTAPIURL:       strings.TrimRight(os.Getenv("BDT_API_URL"), "/"),
+		SMTPHost:        os.Getenv("SMTP_HOST"), SMTPPort: get("SMTP_PORT", "587"), SMTPUser: os.Getenv("SMTP_USER"),
+		SMTPPassword: os.Getenv("SMTP_PASSWORD"), SMTPFrom: os.Getenv("SMTP_FROM"), SMTPFromName: get("SMTP_FROM_NAME", "IGDT"),
 		RateGeneralPerMin: intVal("RATE_LIMIT_PER_MIN", 600),
 		RateAuthPerMin:    intVal("RATE_LIMIT_AUTH_PER_MIN", 10),
 	}

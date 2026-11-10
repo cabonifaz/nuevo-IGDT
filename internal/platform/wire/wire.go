@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/cabonifaz/nuevo-IGDT/internal/adapters/bdt"
+	"github.com/cabonifaz/nuevo-IGDT/internal/adapters/forms"
 	"github.com/cabonifaz/nuevo-IGDT/internal/adapters/httpapi"
 	"github.com/cabonifaz/nuevo-IGDT/internal/adapters/mailer"
 	"github.com/cabonifaz/nuevo-IGDT/internal/adapters/mysql"
@@ -14,6 +16,7 @@ import (
 	"github.com/cabonifaz/nuevo-IGDT/internal/adapters/security"
 	"github.com/cabonifaz/nuevo-IGDT/internal/adapters/storage"
 	"github.com/cabonifaz/nuevo-IGDT/internal/app"
+	"github.com/cabonifaz/nuevo-IGDT/internal/app/ports"
 	"github.com/cabonifaz/nuevo-IGDT/internal/platform/config"
 	"github.com/cabonifaz/nuevo-IGDT/internal/platform/release"
 )
@@ -48,12 +51,21 @@ func Build(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, erro
 		return nil, err
 	}
 	hasher := security.NewArgon2Hasher()
+	// correo saliente: SMTP si está configurado; si no, el envío queda registrado como pendiente de proveedor
+	var mail interface {
+		ports.Mailer
+		ports.MailSender
+	} = mailer.LogMailer{Log: log}
+	if smtp := (mailer.SMTP{Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser, Password: cfg.SMTPPassword,
+		From: cfg.SMTPFrom, FromName: cfg.SMTPFromName}); smtp.Enabled() {
+		mail = smtp
+	}
 	tenantRepo := mysql.TenantRepo{Store: store}
 
 	auth := &app.AuthService{Repo: mysql.AuthRepo{Store: store}, Cipher: cipher, Hasher: hasher, Tokens: issuer,
 		Cfg: app.AuthConfig{RefreshTTL: cfg.RefreshTTL, RememberTTL: cfg.RememberTTL, ReuseGrace: cfg.ReuseGrace, MaxAttempts: 5, LockMinutes: 15}}
 	users := &app.UserService{Users: mysql.UserRepo{Store: store}, Invitations: mysql.InvitationRepo{Store: store},
-		Cipher: cipher, Hasher: hasher, Mailer: mailer.LogMailer{Log: log}, AppURL: cfg.PublicAppURL,
+		Cipher: cipher, Hasher: hasher, Mailer: mail, AppURL: cfg.PublicAppURL,
 		InviteTTL: cfg.InviteTTL, ExposeLink: cfg.Env == "local" || cfg.Env == "staging"}
 	fileRepo := mysql.FileRepo{Store: store}
 
@@ -76,15 +88,16 @@ func Build(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, erro
 		Files:         &app.FileService{Repo: fileRepo, Storage: files, Tenants: tenantRepo},
 		Notifications: notifications,
 		Catalogs:      &app.CatalogService{Repo: mysql.CatalogRepo{Store: store}},
-		Selection:     &app.SelectionService{Repo: mysql.SelectionRepo{Store: store}, Cipher: cipher, Notifier: notifications, Features: features},
-		Features:      features,
-		Versions:      versions,
-		Support:       &app.SupportService{Repo: mysql.SupportRepo{Store: store}, Cipher: cipher, Storage: files, Notifier: notifications},
-		Sync:          mysql.SyncRepo{Store: store},
-		Audit:         mysql.AuditRepo{Store: store},
-		Translations:  mysql.TranslationRepo{Store: store},
-		Tokens:        issuer,
-		Health:        func() error { return store.Ping(context.Background()) },
+		Selection: &app.SelectionService{Repo: mysql.SelectionRepo{Store: store}, Cipher: cipher, Notifier: notifications, Features: features,
+			Renderer: forms.Renderer{}, Mail: mail, BDT: bdt.New(cfg.BDTAPIURL), AppURL: cfg.PublicAppURL},
+		Features:     features,
+		Versions:     versions,
+		Support:      &app.SupportService{Repo: mysql.SupportRepo{Store: store}, Cipher: cipher, Storage: files, Notifier: notifications},
+		Sync:         mysql.SyncRepo{Store: store},
+		Audit:        mysql.AuditRepo{Store: store},
+		Translations: mysql.TranslationRepo{Store: store},
+		Tokens:       issuer,
+		Health:       func() error { return store.Ping(context.Background()) },
 	})
 	return &App{DB: db, Auth: auth, Server: srv}, nil
 }

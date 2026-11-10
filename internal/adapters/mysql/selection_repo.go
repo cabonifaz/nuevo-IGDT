@@ -93,7 +93,8 @@ func (r SelectionRepo) HireComplete(ctx context.Context, m ports.Meta, tenantID 
 	}
 	return r.exec(ctx, "sp_hire_complete", m.ActorID, tenantID, in.RequestID, in.HireID, in.EmployeeID, in.Position, in.ContractID,
 		in.ReasonID, in.AreaID, nullStr(in.SiteID), in.StartDate, nullStr(in.EndDate), in.Schedule, nullStr(in.ContractObject),
-		nullStr(in.ProjectService), nullStr(in.Location), in.SunatDeclared, in.HasEquipment, eq, in.CurrencyID, in.PayEnc,
+		nullStr(in.ProjectService), nullStr(in.Location), in.SunatDeclared, in.HasEquipment, eq, nullJSON(in.EquipmentRequest),
+		nullJSON(in.UserRequest), in.CurrencyID, in.PayEnc,
 		nullStr(in.Notes), nullStr(m.IP))
 }
 

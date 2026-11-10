@@ -898,7 +898,7 @@
     "/hires/events": {
       "get": {
         "summary": "Ingresos registrados (para BDT)",
-        "description": "Requiere hires.read. Eventos desde el cursor ?since= (HIRED: el gestor registró el ingreso del candidato). BDT marca al candidato como ingresado y cierra el RQ que cubrió sus vacantes. Respuesta: events, next (cursor para la próxima llamada) y more.",
+        "description": "Requiere hires.read. Eventos desde el cursor ?since=: HIRED (el gestor confirmó las fichas y registró el ingreso), START_CHANGED (cambió la fecha de inicio: startDate, previousStartDate, reason) y REVOKED (el cliente anuló el ingreso: reason). BDT marca al candidato como ingresado, actualiza su fecha de inicio o deja la vacante sin cubrir. Respuesta: events, next (cursor para la próxima llamada) y more.",
         "parameters": [
           {
             "name": "since",
@@ -997,6 +997,66 @@
           },
           "429": {
             "$ref": "#/components/responses/TooMany"
+          }
+        }
+      }
+    },
+    "/bdt-link": {
+      "get": {
+        "summary": "Estado del enlace de lectura con BDT",
+        "description": "Requiere requirements.write. Indica si IGDT tiene la llave de BDT para leer los perfiles de los candidatos.",
+        "responses": {
+          "200": {
+            "description": "Estado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "linked": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Entregar la llave de lectura de BDT",
+        "description": "Requiere requirements.write. BDT la crea sola al conectar la integración (alcance talent.read) para que IGDT lea el perfil, los CV y las postulaciones de los candidatos. Se guarda cifrada y nunca se devuelve.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "apiKey"
+                ],
+                "properties": {
+                  "apiKey": {
+                    "type": "string",
+                    "description": "Llave bdt_…"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Hecho"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Retirar la llave de lectura de BDT",
+        "description": "Requiere requirements.write. BDT la retira al desconectar la integración.",
+        "responses": {
+          "204": {
+            "description": "Hecho"
           }
         }
       }

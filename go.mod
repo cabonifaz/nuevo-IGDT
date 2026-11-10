@@ -15,5 +15,6 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
+	github.com/go-pdf/fpdf v0.9.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 )

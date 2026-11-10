@@ -103,7 +103,7 @@ BEGIN
       VALUES (v_uuid, p_tenant_id, p_candidate_uuid, p_requirement_uuid, p_talent_uuid, p_first, p_last, p_second, p_headline,
               p_doc_type_code, p_doc_type_label, p_doc_number_enc, p_doc_number_bidx, p_email_enc, p_phone_enc,
               p_client_uuid, p_client_label, p_profile_uuid, p_profile_label, p_doc, p_confirmed_at);
-    ELSEIF v_status = 'COMPLETED' THEN
+    ELSEIF v_status IN ('COMPLETED', 'REVOKED') THEN
       SET v_event = 'NONE'; -- el ingreso ya se registró: el snapshot queda como estaba
     ELSE
       SET v_event = IF(v_status = 'CANCELLED', 'REOPENED', 'UPDATED');
@@ -136,18 +136,18 @@ CREATE PROCEDURE sp_hire_request_list(IN p_actor_id BIGINT UNSIGNED, IN p_tenant
 BEGIN
   CALL sp_assert_actor(p_actor_id, p_tenant_id, 'hire.read');
   SELECT JSON_OBJECT('id', h.uuid, 'status', h.status, 'candidateId', h.candidate_uuid,
-           'requirement', JSON_OBJECT('id', h.requirement_uuid, 'code', JSON_EXTRACT(h.doc, '$.requirement.code'),
+           'talentId', h.talent_uuid, 'requirement', JSON_OBJECT('id', h.requirement_uuid, 'code', JSON_EXTRACT(h.doc, '$.requirement.code'),
                                       'title', JSON_EXTRACT(h.doc, '$.requirement.title')),
            'talent', JSON_OBJECT('firstName', h.first_name, 'lastName', h.last_name, 'secondLastName', h.second_last_name,
                                  'headline', h.headline, 'docType', h.doc_type_label),
            'client', JSON_OBJECT('id', h.client_uuid, 'label', h.client_label),
            'profile', JSON_OBJECT('id', h.profile_uuid, 'label', h.profile_label),
            'confirmedAt', h.confirmed_at, 'receivedAt', h.received_at, 'takenAt', h.taken_at, 'cancelledAt', h.cancelled_at,
-           'completedAt', h.completed_at, 'assignedNameEnc', TO_BASE64(u.full_name_enc), 'mine', h.assigned_user_id <=> p_actor_id) AS doc
+           'completedAt', h.completed_at, 'revokedAt', h.revoked_at, 'hasDraft', h.draft IS NOT NULL, 'assignedNameEnc', TO_BASE64(u.full_name_enc), 'mine', h.assigned_user_id <=> p_actor_id) AS doc
     FROM hire_request h
     LEFT JOIN app_user u ON u.id = h.assigned_user_id
    WHERE h.tenant_id = p_tenant_id AND (p_status IS NULL OR h.status = p_status)
-   ORDER BY FIELD(h.status, 'PENDING', 'IN_PROGRESS', 'CANCELLED', 'COMPLETED'), h.received_at DESC
+   ORDER BY FIELD(h.status, 'PENDING', 'IN_PROGRESS', 'CANCELLED', 'COMPLETED', 'REVOKED'), h.received_at DESC
    LIMIT 1000;
 END $$
 
@@ -171,7 +171,7 @@ BEGIN
            'vacancy', JSON_EXTRACT(h.doc, '$.vacancy'), 'conditions', JSON_EXTRACT(h.doc, '$.conditions'),
            'confirmedBy', JSON_EXTRACT(h.doc, '$.confirmedBy'),
            'confirmedAt', h.confirmed_at, 'receivedAt', h.received_at, 'takenAt', h.taken_at, 'cancelledAt', h.cancelled_at,
-           'completedAt', h.completed_at, 'assignedNameEnc', TO_BASE64(u.full_name_enc),
+           'completedAt', h.completed_at, 'revokedAt', h.revoked_at, 'assignedNameEnc', TO_BASE64(u.full_name_enc),
            'mine', h.assigned_user_id <=> p_actor_id) AS doc
     FROM hire_request h
     LEFT JOIN app_user u ON u.id = h.assigned_user_id

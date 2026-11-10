@@ -6,8 +6,6 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
-
-	"github.com/cabonifaz/nuevo-IGDT/internal/app"
 )
 
 // Bandeja de selección: RQ de BDT (solo lectura) y solicitudes de ingreso.
@@ -19,7 +17,18 @@ func (s *Server) selectionRoutes(r chi.Router) {
 	r.With(read, feat).Get("/hire-requests", s.selHires)
 	r.With(read, feat).Get("/hire-requests/{id}", s.selHire)
 	r.With(s.requirePerm("hire.write"), feat).Post("/hire-requests/{id}/take", s.selTakeHire)
-	r.With(s.requirePerm("hire.write"), feat).Post("/hire-requests/{id}/hire", s.selCompleteHire)
+	write := s.requirePerm("hire.write")
+	r.With(write, feat).Post("/hire-requests/{id}/hire", s.selCompleteHire)
+	r.With(write, feat).Put("/hire-requests/{id}/hire", s.selUpdateHire)
+	r.With(write, feat).Put("/hire-requests/{id}/draft", s.selSaveDraft)
+	r.With(write, feat).Post("/hire-requests/{id}/revoke", s.selRevokeHire)
+	r.With(write, feat).Post("/hire-requests/{id}/forms/send", s.selResendForms)
+	r.With(read, feat).Get("/hire-requests/{id}/forms/{form}", s.selFormPDF)
+	r.With(read, feat).Post("/hire-requests/{id}/forms/{form}/preview", s.selFormPreview)
+	r.With(read, feat).Get("/hire-forms/settings", s.selFormSettings)
+	r.With(s.requirePerm("hire.settings"), feat).Put("/hire-forms/settings", s.selSaveFormSettings)
+	r.With(read, feat).Get("/talents/{id}", s.selTalent)
+	r.With(read, feat).Get("/talents/{id}/files/{fid}", s.selTalentFile)
 	r.With(s.requirePerm("employee.read")).Get("/employees", s.selEmployees)
 }
 
@@ -96,20 +105,6 @@ func (s *Server) integrationHires(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": out})
-}
-
-func (s *Server) selCompleteHire(w http.ResponseWriter, r *http.Request) {
-	var in app.HireForm
-	if err := decode(w, r, &in); err != nil {
-		s.writeErr(w, r, err)
-		return
-	}
-	id, err := s.Selection.CompleteHire(r.Context(), principal(r), s.clientIP(r), chi.URLParam(r, "id"), in)
-	if err != nil {
-		s.writeErr(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, map[string]string{"id": id})
 }
 
 func (s *Server) selEmployees(w http.ResponseWriter, r *http.Request) {
