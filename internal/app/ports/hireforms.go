@@ -25,6 +25,9 @@ type HireFormsRepository interface {
 	HireFormStyle(ctx context.Context, tenantID uint64) (json.RawMessage, error)
 	HireFormStyleSave(ctx context.Context, m Meta, tenantID uint64, style json.RawMessage, clearLogo bool) error
 	HireFormLogoSet(ctx context.Context, m Meta, tenantID uint64, fileUUID string) error
+	HireAssertAssignee(ctx context.Context, m Meta, tenantID uint64, requestID, states string) error
+	HireAssign(ctx context.Context, m Meta, tenantID uint64, requestID, userUUID string) error
+	HireAssignees(ctx context.Context, m Meta, tenantID uint64) ([]json.RawMessage, error)
 	UserSignatureSet(ctx context.Context, m Meta, fileUUID string) error
 	UserSignatureClear(ctx context.Context, m Meta) error
 	UserSignature(ctx context.Context, tenantID, actorID uint64, userUUID string) (key, mime string, err error)

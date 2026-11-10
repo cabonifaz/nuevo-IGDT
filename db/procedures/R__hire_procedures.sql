@@ -19,6 +19,7 @@ BEGIN
   DECLARE v_n INT;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN ROLLBACK; RESIGNAL; END;
   CALL sp_assert_actor(p_actor_id, p_tenant_id, 'hire.write');
+  CALL sp_hire_assert_assignee(p_actor_id, p_tenant_id, p_request_uuid, 'IN_PROGRESS');
   IF TRIM(IFNULL(p_position, '')) = '' OR TRIM(IFNULL(p_schedule, '')) = '' OR p_start IS NULL
      OR (p_end IS NOT NULL AND p_end < p_start) OR p_pay_enc IS NULL THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:VALIDATION';

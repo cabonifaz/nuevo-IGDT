@@ -17,6 +17,8 @@ func (s *Server) selectionRoutes(r chi.Router) {
 	r.With(read, feat).Get("/hire-requests", s.selHires)
 	r.With(read, feat).Get("/hire-requests/{id}", s.selHire)
 	r.With(s.requirePerm("hire.write"), feat).Post("/hire-requests/{id}/take", s.selTakeHire)
+	r.With(s.requirePerm("hire.assign"), feat).Post("/hire-requests/{id}/assign", s.selAssignHire)
+	r.With(s.requirePerm("hire.assign"), feat).Get("/hire-assignees", s.selAssignees)
 	write := s.requirePerm("hire.write")
 	r.With(write, feat).Post("/hire-requests/{id}/hire", s.selCompleteHire)
 	r.With(write, feat).Put("/hire-requests/{id}/hire", s.selUpdateHire)

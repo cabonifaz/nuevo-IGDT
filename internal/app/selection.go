@@ -605,3 +605,32 @@ func decryptFields(c ports.Cipher, doc json.RawMessage, keys ...string) json.Raw
 	}
 	return out
 }
+
+// AssignHire: el administrador reasigna la solicitud a otro gestor (en proceso o ya confirmada).
+func (s *SelectionService) AssignHire(ctx context.Context, p *domain.Principal, ip, id, userID string) error {
+	tid, err := tenantOf(p)
+	if err != nil {
+		return err
+	}
+	if !validUUID(id) || !validUUID(userID) {
+		return domain.ErrValidation
+	}
+	return s.Repo.HireAssign(ctx, meta(p, ip), tid, id, userID)
+}
+
+// Assignees: gestores a los que se puede asignar una solicitud.
+func (s *SelectionService) Assignees(ctx context.Context, p *domain.Principal) ([]json.RawMessage, error) {
+	tid, err := tenantOf(p)
+	if err != nil {
+		return nil, err
+	}
+	docs, err := s.Repo.HireAssignees(ctx, meta(p, ""), tid)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]json.RawMessage, 0, len(docs))
+	for _, d := range docs {
+		out = append(out, decryptNames(s.Cipher, d))
+	}
+	return out, nil
+}

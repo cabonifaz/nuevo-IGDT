@@ -190,3 +190,27 @@ func (s *Server) integrationBDTLink(w http.ResponseWriter, r *http.Request) {
 		s.noContent(w, r, s.Selection.LinkBDT(r.Context(), c, in.APIKey))
 	}
 }
+
+func (s *Server) selAssignHire(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		UserID string `json:"userId"`
+	}
+	if err := decode(w, r, &in); err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	if err := s.Selection.AssignHire(r.Context(), principal(r), s.clientIP(r), chi.URLParam(r, "id"), in.UserID); err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) selAssignees(w http.ResponseWriter, r *http.Request) {
+	out, err := s.Selection.Assignees(r.Context(), principal(r))
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}

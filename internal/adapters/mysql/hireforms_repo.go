@@ -158,3 +158,17 @@ func (r SelectionRepo) UserSignature(ctx context.Context, tenantID, actorID uint
 	}
 	return key, mime, rs.Close()
 }
+
+// ---- Asignación de solicitudes ----
+
+func (r SelectionRepo) HireAssertAssignee(ctx context.Context, m ports.Meta, tenantID uint64, requestID, states string) error {
+	return r.exec(ctx, "sp_hire_assert_assignee", m.ActorID, tenantID, requestID, states)
+}
+
+func (r SelectionRepo) HireAssign(ctx context.Context, m ports.Meta, tenantID uint64, requestID, userUUID string) error {
+	return r.exec(ctx, "sp_hire_request_assign", m.ActorID, tenantID, requestID, userUUID, nullStr(m.IP))
+}
+
+func (r SelectionRepo) HireAssignees(ctx context.Context, m ports.Meta, tenantID uint64) ([]json.RawMessage, error) {
+	return docRepo(r).rawDocs(ctx, "sp_hire_assignees", m.ActorID, tenantID)
+}

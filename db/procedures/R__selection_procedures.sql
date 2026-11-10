@@ -179,17 +179,4 @@ BEGIN
 END $$
 
 -- Un gestor toma la solicitud (queda en curso a su cargo). Se puede reasignar mientras no esté cerrada.
-DROP PROCEDURE IF EXISTS sp_hire_request_take $$
-CREATE PROCEDURE sp_hire_request_take(IN p_actor_id BIGINT UNSIGNED, IN p_tenant_id BIGINT UNSIGNED, IN p_uuid CHAR(36), IN p_ip VARCHAR(45))
-BEGIN
-  DECLARE v_status VARCHAR(12);
-  CALL sp_assert_actor(p_actor_id, p_tenant_id, 'hire.write');
-  SET v_status = (SELECT status FROM hire_request WHERE tenant_id = p_tenant_id AND uuid = p_uuid);
-  IF v_status IS NULL THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:NOT_FOUND'; END IF;
-  IF v_status NOT IN ('PENDING', 'IN_PROGRESS') THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:HIRE_STATE'; END IF;
-  UPDATE hire_request SET status = 'IN_PROGRESS', assigned_user_id = p_actor_id, taken_at = NOW(3)
-   WHERE tenant_id = p_tenant_id AND uuid = p_uuid;
-  CALL sp_audit_insert(p_tenant_id, p_actor_id, NULL, 'TAKE', 'hire_request', p_uuid, NULL, p_ip);
-END $$
-
 DELIMITER ;

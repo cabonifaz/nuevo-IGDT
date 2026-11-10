@@ -13,7 +13,7 @@ BEGIN
   CALL sp_assert_actor(p_actor_id, p_tenant_id, 'hire.write');
   SET v_status = (SELECT status FROM hire_request WHERE tenant_id = p_tenant_id AND uuid = p_request_uuid);
   IF v_status IS NULL THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:NOT_FOUND'; END IF;
-  IF v_status NOT IN ('PENDING', 'IN_PROGRESS') THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:HIRE_STATE'; END IF;
+  CALL sp_hire_assert_assignee(p_actor_id, p_tenant_id, p_request_uuid, 'IN_PROGRESS');
   UPDATE hire_request SET draft = p_draft, draft_pay_enc = IFNULL(p_pay_enc, draft_pay_enc), draft_at = NOW(3), draft_by = p_actor_id,
          status = 'IN_PROGRESS', assigned_user_id = IFNULL(assigned_user_id, p_actor_id), taken_at = IFNULL(taken_at, NOW(3))
    WHERE tenant_id = p_tenant_id AND uuid = p_request_uuid;
@@ -63,6 +63,7 @@ BEGIN
   DECLARE v_old_start DATE;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN ROLLBACK; RESIGNAL; END;
   CALL sp_assert_actor(p_actor_id, p_tenant_id, 'hire.write');
+  CALL sp_hire_assert_assignee(p_actor_id, p_tenant_id, p_request_uuid, 'COMPLETED');
   IF TRIM(IFNULL(p_position, '')) = '' OR TRIM(IFNULL(p_schedule, '')) = '' OR p_start IS NULL
      OR (p_end IS NOT NULL AND p_end < p_start) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:VALIDATION';
@@ -109,6 +110,7 @@ BEGIN
   DECLARE v_hire, v_emp BIGINT UNSIGNED;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN ROLLBACK; RESIGNAL; END;
   CALL sp_assert_actor(p_actor_id, p_tenant_id, 'hire.write');
+  CALL sp_hire_assert_assignee(p_actor_id, p_tenant_id, p_request_uuid, 'COMPLETED');
   IF TRIM(IFNULL(p_reason, '')) = '' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:REASON_REQUIRED'; END IF;
   START TRANSACTION;
   CALL sp_hire_assert_editable(p_tenant_id, p_request_uuid, v_hire);

@@ -366,6 +366,9 @@ func (s *SelectionService) ResendForms(ctx context.Context, p *domain.Principal,
 			return domain.ErrValidation
 		}
 	}
+	if err := s.Repo.HireAssertAssignee(ctx, meta(p, ""), tid, requestID, "COMPLETED"); err != nil {
+		return err
+	}
 	h, err := s.formsOfHire(ctx, p, tid, requestID)
 	if err != nil {
 		return err
