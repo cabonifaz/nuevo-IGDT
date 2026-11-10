@@ -214,3 +214,14 @@ func (s *Server) selAssignees(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, out)
 }
+
+func (s *Server) selTalentCVSource(w http.ResponseWriter, r *http.Request) {
+	out, err := s.Selection.TalentCVSource(r.Context(), principal(r), chi.URLParam(r, "id"), r.URL.Query().Get("lang"))
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	noStore(w)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(out)
+}

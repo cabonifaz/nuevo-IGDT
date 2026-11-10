@@ -4,6 +4,7 @@ Formato: `## vMAYOR.MENOR — AAAA-MM-DD`, seguido de los cambios en viñetas (e
 sube `VERSION` y se agrega su sección aquí: la API la registra al desplegarse en cada ambiente y la notifica.
 
 ## v0.6 — 2026-11-10
+- Perfil del candidato: los CV en español e inglés se generan en IGDT con la plantilla y la marca de BDT (y la traducción de BDT para el inglés) aunque nadie los haya guardado en BDT; si BDT tiene uno guardado y vigente se muestra ese. Se agregan los documentos del talento (certificados, títulos, antecedentes) en solo lectura.
 - Solicitudes de ingreso: hay que tomarlas antes de completar las fichas y solo el gestor asignado puede guardar, confirmar, corregir, revocar o reenviar. Otro gestor no puede quitársela; el administrador de la empresa la reasigna (Reasignar).
 - Firma de cada gestor: se sube (PNG o JPG) o se dibuja en «Mi firma» del menú del usuario; se recorta, el fondo blanco queda transparente y se imprime sobre la línea de firma de las fichas. En las fichas confirmadas firma quien confirmó o hizo la última corrección.
 - Las fichas de ingreso en PDF tienen ahora el diseño de los formatos originales del FMI: cabecera con logo, título y código/versión/fecha; FT-GTH-12 Formulario de movimiento (estructura salarial con casillas, declaración en SUNAT, movimiento y cese), FT-GS-03 Solicitud de instalación de software y hardware y FT-GS-01 Solicitud de creación, modificación o desactivación de usuarios, con la firma del gestor al pie. En locación de servicios la ficha de ingreso sale sin cabecera, como el original.

@@ -20,7 +20,7 @@ type Client struct {
 }
 
 func New(base string) *Client {
-	return &Client{BaseURL: base, HTTP: &http.Client{Timeout: 30 * time.Second}}
+	return &Client{BaseURL: base, HTTP: &http.Client{Timeout: 90 * time.Second}}
 }
 
 func (c *Client) Enabled() bool { return c != nil && c.BaseURL != "" }
@@ -75,4 +75,21 @@ func (c *Client) TalentFile(ctx context.Context, key, talentID, fileID string) (
 		return "", nil, err
 	}
 	return res.Header.Get("Content-Type"), res.Body, nil
+}
+
+const maxCVSource = 20 << 20 // incluye cabecera, pie, logo y foto en data URL
+
+// CVSource: insumos para generar el CV con la marca del tenant como lo hace BDT (talento, plantilla y, en inglés,
+// los textos traducidos por BDT).
+func (c *Client) CVSource(ctx context.Context, key, talentID, lang string) (json.RawMessage, error) {
+	res, err := c.get(ctx, key, "/integration/v1/talents/"+url.PathEscape(talentID)+"/cv-source?lang="+url.QueryEscape(lang))
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(res.Body, maxCVSource+1))
+	if err != nil || len(b) > maxCVSource || !json.Valid(b) {
+		return nil, fmt.Errorf("respuesta de BDT inválida")
+	}
+	return b, nil
 }

@@ -572,3 +572,19 @@ func mailerEnabled(m ports.MailSender) bool {
 	}
 	return false
 }
+
+// TalentCVSource: insumos de BDT para generar el CV con marca (es | en) en el navegador, igual que en BDT.
+func (s *SelectionService) TalentCVSource(ctx context.Context, p *domain.Principal, talentID, lang string) (json.RawMessage, error) {
+	tid, err := tenantOf(p)
+	if err != nil {
+		return nil, err
+	}
+	if !validUUID(talentID) || (lang != "es" && lang != "en") {
+		return nil, domain.ErrValidation
+	}
+	key, err := s.bdtKey(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
+	return s.BDT.CVSource(ctx, key, talentID, lang)
+}

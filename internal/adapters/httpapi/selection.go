@@ -31,6 +31,7 @@ func (s *Server) selectionRoutes(r chi.Router) {
 	r.With(s.requirePerm("hire.settings"), feat).Put("/hire-forms/settings", s.selSaveFormSettings)
 	r.With(read, feat).Get("/talents/{id}", s.selTalent)
 	r.With(read, feat).Get("/talents/{id}/files/{fid}", s.selTalentFile)
+	r.With(read, feat).Get("/talents/{id}/cv-source", s.selTalentCVSource)
 	r.With(s.requirePerm("employee.read")).Get("/employees", s.selEmployees)
 }
 
