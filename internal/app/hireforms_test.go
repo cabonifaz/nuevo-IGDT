@@ -2,6 +2,11 @@ package app
 
 import (
 	"bytes"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/png"
+	"math"
 	"os"
 	"testing"
 	"time"
@@ -111,5 +116,49 @@ func TestFormStyle(t *testing.T) {
 	}
 	if got := longDateES(fixedNow()); got != "10 de noviembre de 2026" {
 		t.Fatal(got)
+	}
+}
+
+func TestSignature(t *testing.T) {
+	// firma sintética: trazo negro sobre fondo blanco con mucho margen
+	img := image.NewRGBA(image.Rect(0, 0, 600, 300))
+	draw.Draw(img, img.Bounds(), image.White, image.Point{}, draw.Src)
+	for x := 150; x < 450; x++ {
+		y := 150 + int(40*math.Sin(float64(x)/25))
+		for d := -2; d <= 2; d++ {
+			img.Set(x, y+d, color.Black)
+		}
+	}
+	var buf bytes.Buffer
+	_ = png.Encode(&buf, img)
+	clean, ok := cleanSignature(buf.Bytes())
+	if !ok {
+		t.Fatal("firma válida rechazada")
+	}
+	cfg, _ := png.DecodeConfig(bytes.NewReader(clean))
+	if cfg.Width > 320 || cfg.Height > 100 {
+		t.Fatalf("no se recortó: %dx%d", cfg.Width, cfg.Height)
+	}
+	blank := image.NewRGBA(image.Rect(0, 0, 50, 50))
+	draw.Draw(blank, blank.Bounds(), image.White, image.Point{}, draw.Src)
+	buf.Reset()
+	_ = png.Encode(&buf, blank)
+	if _, ok := cleanSignature(buf.Bytes()); ok {
+		t.Fatal("imagen en blanco aceptada")
+	}
+	if _, ok := cleanSignature([]byte("no es imagen")); ok {
+		t.Fatal("archivo inválido aceptado")
+	}
+	ps := &printStyle{style: HireFormStyle{}.withDefaults(), company: "Fractal"}
+	c := sampleContext(ps, "Gestora")
+	c.signature = clean
+	for _, form := range FormCodes {
+		b, err := forms.Renderer{}.Render(c.build(form))
+		if dir := os.Getenv("PDF_OUT"); dir != "" && err == nil {
+			_ = os.WriteFile(dir+"/sig_"+form+".pdf", b, 0o600)
+		}
+		if err != nil || !bytes.HasPrefix(b, []byte("%PDF")) {
+			t.Fatalf("%s: %v", form, err)
+		}
 	}
 }

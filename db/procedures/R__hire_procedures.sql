@@ -102,6 +102,7 @@ BEGIN
            'currency', JSON_OBJECT('id', cu.uuid, 'code', cu.code), 'payEnc', TO_BASE64(x.pay_enc), 'notes', x.notes,
            'createdAt', x.created_at, 'createdByNameEnc', TO_BASE64(u.full_name_enc),
            'updatedAt', x.updated_at, 'updatedByNameEnc', TO_BASE64(uu.full_name_enc),
+           'signerId', IFNULL(uu.uuid, u.uuid), 'signerNameEnc', TO_BASE64(IFNULL(uu.full_name_enc, u.full_name_enc)),
            'status', x.status, 'revokedAt', x.revoked_at, 'revokeReason', x.revoke_reason, 'revokedByNameEnc', TO_BASE64(ur.full_name_enc),
            'editableUntil', DATE_ADD(x.start_date, INTERVAL IFNULL(st.edit_grace_days, 5) DAY),
            'editable', x.status = 'ACTIVE' AND UTC_DATE() <= DATE_ADD(x.start_date, INTERVAL IFNULL(st.edit_grace_days, 5) DAY),

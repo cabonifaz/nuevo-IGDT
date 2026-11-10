@@ -422,6 +422,11 @@ func (s *SelectionService) formsOfHire(ctx context.Context, p *domain.Principal,
 	if err != nil || m == nil {
 		return nil, err
 	}
+	return s.formsFromHire(m), nil
+}
+
+// formsFromHire: las fichas del ingreso confirmado (documento de sp_hire_of_request).
+func (s *SelectionService) formsFromHire(m map[string]any) *HireForms {
 	f := &HireForms{Hire: HireForm{Position: str(m, "position"), ContractID: str(m, "contract", "id"), ReasonID: str(m, "reason", "id"),
 		AreaID: str(m, "area", "id"), SiteID: str(m, "site", "id"), StartDate: dateOnly(str(m, "startDate")), EndDate: dateOnly(str(m, "endDate")),
 		Schedule: str(m, "schedule"), ContractObject: str(m, "contractObject"), ProjectService: str(m, "projectService"),
@@ -449,7 +454,7 @@ func (s *SelectionService) formsOfHire(ctx context.Context, p *domain.Principal,
 			f.Users = &u
 		}
 	}
-	return f, nil
+	return f
 }
 
 func dateOnly(s string) string {

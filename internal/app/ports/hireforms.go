@@ -25,6 +25,9 @@ type HireFormsRepository interface {
 	HireFormStyle(ctx context.Context, tenantID uint64) (json.RawMessage, error)
 	HireFormStyleSave(ctx context.Context, m Meta, tenantID uint64, style json.RawMessage, clearLogo bool) error
 	HireFormLogoSet(ctx context.Context, m Meta, tenantID uint64, fileUUID string) error
+	UserSignatureSet(ctx context.Context, m Meta, fileUUID string) error
+	UserSignatureClear(ctx context.Context, m Meta) error
+	UserSignature(ctx context.Context, tenantID, actorID uint64, userUUID string) (key, mime string, err error)
 	HireFormDispatchAdd(ctx context.Context, actorID, tenantID uint64, requestID, form, reason string, recipients []string, status, errText string) error
 	BDTLinkSet(ctx context.Context, tenantID, apiKeyID uint64, keyEnc []byte) error
 	BDTLinkClear(ctx context.Context, tenantID, apiKeyID uint64) error
@@ -88,6 +91,7 @@ type FormPrint struct {
 	LogoType  string // "PNG" | "JPG"
 	Company   string
 	Signer    string // nombre del gestor que firma
+	Signature []byte // imagen PNG de la firma del gestor (opcional)
 	SignerPos string // cargo del firmante
 	Footer    string // pie completo ("Generado con … — Fecha de emisión: …")
 	FMI       *FMIPrint

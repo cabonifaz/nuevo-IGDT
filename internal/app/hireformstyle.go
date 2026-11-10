@@ -308,7 +308,11 @@ func (s *SelectionService) StylePreview(ctx context.Context, p *domain.Principal
 	if name == "" {
 		name = "Nombre del gestor"
 	}
-	return s.Renderer.Render(sampleContext(ps, name).build(form))
+	c := sampleContext(ps, name)
+	if p.TenantID != nil {
+		c.signature, _ = s.signature(ctx, tid, p.UserID, "")
+	}
+	return s.Renderer.Render(c.build(form))
 }
 
 // sampleContext: datos de ejemplo para la vista previa del formato.

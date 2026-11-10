@@ -103,14 +103,15 @@ func (s *SelectionService) SaveFormSettings(ctx context.Context, p *domain.Princ
 // ---------------- Impresión ----------------
 
 type formContext struct {
-	req      map[string]any // solicitud (datos personales descifrados)
-	forms    *HireForms
-	labels   map[string]ports.CatalogLabel
-	settings *HireFormSettings
-	manager  string
-	issued   time.Time
-	withPay  bool
-	print    *printStyle // formato y logo del tenant
+	req       map[string]any // solicitud (datos personales descifrados)
+	forms     *HireForms
+	labels    map[string]ports.CatalogLabel
+	settings  *HireFormSettings
+	manager   string
+	issued    time.Time
+	withPay   bool
+	print     *printStyle // formato y logo del tenant
+	signature []byte      // firma del gestor (PNG)
 }
 
 func (c *formContext) lab(id string) string { return c.labels[id].Label }
@@ -195,7 +196,7 @@ func (c *formContext) build(form string) ports.FormPrint {
 	st := c.print.style
 	h := c.forms.Hire
 	out := ports.FormPrint{Form: form, Header: c.header(form), Logo: c.print.logo, LogoType: c.print.logoType,
-		Company: c.print.company, Signer: c.manager, SignerPos: st.SignerTitle, Footer: c.footer(),
+		Company: c.print.company, Signer: c.manager, Signature: c.signature, SignerPos: st.SignerTitle, Footer: c.footer(),
 		Style: ports.FormStyle{Primary: st.Primary, HeaderText: st.HeaderText, Border: st.Border, LabelBg: st.LabelBg, Title: st.Title}}
 	client := str(c.req, "client", "label")
 	switch form {
@@ -292,9 +293,16 @@ func (s *SelectionService) formContext(ctx context.Context, p *domain.Principal,
 		return nil, err
 	}
 	withPay := internal || p.Has("employee.salary.read")
+	// firma quien confirmó el ingreso (o lo corrigió por última vez); en borradores y vistas previas, el usuario actual
+	signerID, signerName := "", ""
 	if forms == nil {
-		if forms, err = s.formsOfHire(ctx, p, tid, requestID); err != nil {
+		hm, err := s.hireOf(ctx, p, tid, requestID)
+		if err != nil {
 			return nil, err
+		}
+		if hm != nil {
+			forms = s.formsFromHire(hm)
+			signerID, signerName = str(hm, "signerId"), str(hm, "signerName")
 		}
 		if forms == nil {
 			if forms, _, err = s.draftOf(ctx, p, tid, requestID, true); err != nil {
@@ -325,11 +333,23 @@ func (s *SelectionService) formContext(ctx context.Context, p *domain.Principal,
 	if manager == "" {
 		manager = str(req, "assignedName")
 	}
+	var sig []byte
+	if signerID != "" {
+		if signerName != "" {
+			manager = signerName
+		}
+		sig, err = s.signature(ctx, tid, 0, signerID)
+	} else {
+		sig, err = s.signature(ctx, tid, p.UserID, "")
+	}
+	if err != nil {
+		return nil, err
+	}
 	ps, err := s.printStyle(ctx, tid, nil)
 	if err != nil {
 		return nil, err
 	}
-	return &formContext{req: req, forms: forms, labels: labels, settings: st, manager: manager, issued: time.Now().In(limaTZ()), withPay: withPay, print: ps}, nil
+	return &formContext{req: req, forms: forms, labels: labels, settings: st, manager: manager, signature: sig, issued: time.Now().In(limaTZ()), withPay: withPay, print: ps}, nil
 }
 
 func limaTZ() *time.Location {

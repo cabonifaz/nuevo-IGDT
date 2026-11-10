@@ -130,3 +130,31 @@ func (r SelectionRepo) CatalogLabels(ctx context.Context, tenantID uint64, ids [
 	}
 	return out, rs.Close()
 }
+
+// ---- Firma del usuario ----
+
+func (r SelectionRepo) UserSignatureSet(ctx context.Context, m ports.Meta, fileUUID string) error {
+	return r.exec(ctx, "sp_user_signature_set", m.ActorID, fileUUID, nullStr(m.IP))
+}
+
+func (r SelectionRepo) UserSignatureClear(ctx context.Context, m ports.Meta) error {
+	return r.exec(ctx, "sp_user_signature_clear", m.ActorID, nullStr(m.IP))
+}
+
+// UserSignature: firma del usuario userUUID del tenant o, si userUUID es "", la del actor. Sin firma: key "".
+func (r SelectionRepo) UserSignature(ctx context.Context, tenantID, actorID uint64, userUUID string) (string, string, error) {
+	rs, err := r.call(ctx, "sp_user_signature_get", tenantID, actorID, nullStr(userUUID))
+	if err != nil {
+		return "", "", err
+	}
+	rs.Next()
+	var id, key, mime string
+	var at any
+	if err := rs.One(&id, &key, &mime, &at); err != nil {
+		if err == domain.ErrNotFound {
+			return "", "", rs.Close()
+		}
+		return "", "", err
+	}
+	return key, mime, rs.Close()
+}

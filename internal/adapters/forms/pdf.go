@@ -263,9 +263,11 @@ func (c *doc) signature(note string, signerBold bool) {
 		c.font(false, 8, grayText)
 		y -= float64(len(c.lines(note, width)))*3.6 + 1.5
 	}
-	c.font(true, 11, ink)
-	p.SetXY(side, y+8)
-	p.CellFormat(width, 5, c.tr(c.d.Signer), "", 0, "C", false, 0, "")
+	if !c.signatureImage(y + 13.2) {
+		c.font(true, 11, ink)
+		p.SetXY(side, y+8)
+		p.CellFormat(width, 5, c.tr(c.d.Signer), "", 0, "C", false, 0, "")
+	}
 	lw := 92.6
 	p.SetLineWidth(0.3)
 	p.SetDrawColor(rgb(c.st.Border))
@@ -675,4 +677,26 @@ func (c *doc) users(u ports.UsersPrint) {
 		y += h
 	}
 	c.signature("", false)
+}
+
+// signatureImage dibuja la firma del gestor apoyada sobre la línea (base en baseY), máx. 18 x 60 mm, como el original
+// (imagen de hasta 80 x 250 px). Devuelve false si no hay firma o no se pudo leer.
+func (c *doc) signatureImage(baseY float64) bool {
+	p := c.pdf
+	if len(c.d.Signature) == 0 {
+		return false
+	}
+	opt := fpdf.ImageOptions{ImageType: "PNG"}
+	info := p.RegisterImageOptionsReader("firma", opt, bytes.NewReader(c.d.Signature))
+	if !p.Ok() || info == nil || info.Width() <= 0 || info.Height() <= 0 {
+		p.ClearError()
+		return false
+	}
+	const maxW, maxH = 60.0, 18.0
+	w, h := maxW, maxW*info.Height()/info.Width()
+	if h > maxH {
+		h, w = maxH, maxH*info.Width()/info.Height()
+	}
+	p.ImageOptions("firma", (pageW-w)/2, baseY-h, w, h, false, opt, 0, "")
+	return true
 }

@@ -118,3 +118,54 @@ func (s *Server) formStylePreview(w http.ResponseWriter, r *http.Request) {
 	}
 	writePDF(w, b, "Vista_previa_"+form+".pdf")
 }
+
+// ---- Firma del usuario (para las fichas de ingreso) ----
+
+func (s *Server) signatureRoutes(r chi.Router) {
+	r.Get("/me/signature", s.mySignature)
+	r.Post("/me/signature", s.uploadSignature)
+	r.Delete("/me/signature", s.clearSignature)
+}
+
+func (s *Server) mySignature(w http.ResponseWriter, r *http.Request) {
+	b, err := s.Selection.MySignature(r.Context(), principal(r))
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	if b == nil {
+		s.writeErr(w, r, domain.ErrNotFound)
+		return
+	}
+	noStore(w)
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write(b)
+}
+
+func (s *Server) uploadSignature(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 3<<20)
+	if err := r.ParseMultipartForm(3 << 20); err != nil {
+		s.writeErr(w, r, domain.NewError("FILE_TOO_LARGE"))
+		return
+	}
+	f, hdr, err := r.FormFile("file")
+	if err != nil {
+		s.writeErr(w, r, domain.ErrValidation)
+		return
+	}
+	defer f.Close()
+	if err := s.Selection.UploadSignature(r.Context(), principal(r), s.clientIP(r), hdr.Filename, f); err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) clearSignature(w http.ResponseWriter, r *http.Request) {
+	if err := s.Selection.ClearSignature(r.Context(), principal(r), s.clientIP(r)); err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

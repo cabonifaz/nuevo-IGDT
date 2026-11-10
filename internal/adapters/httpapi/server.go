@@ -108,6 +108,7 @@ func (s *Server) Handler() http.Handler {
 				r.With(s.requirePerm("tenant.apikeys.request"), s.requireFeature("api_keys")).Post("/api-keys/{id}/revoke", s.revokeApiKey)
 				r.With(s.requirePerm("tenant.translations.manage")).Put("/translations", s.upsertTranslation)
 				r.With(s.requirePerm("tenant.audit.read")).Get("/audit", s.listAudit)
+				r.Group(s.signatureRoutes)
 				r.Group(s.notificationRoutes)
 				r.Group(s.catalogRoutes)
 				r.Group(s.selectionRoutes)

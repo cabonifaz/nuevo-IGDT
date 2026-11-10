@@ -4,6 +4,7 @@ Formato: `## vMAYOR.MENOR — AAAA-MM-DD`, seguido de los cambios en viñetas (e
 sube `VERSION` y se agrega su sección aquí: la API la registra al desplegarse en cada ambiente y la notifica.
 
 ## v0.6 — 2026-11-10
+- Firma de cada gestor: se sube (PNG o JPG) o se dibuja en «Mi firma» del menú del usuario; se recorta, el fondo blanco queda transparente y se imprime sobre la línea de firma de las fichas. En las fichas confirmadas firma quien confirmó o hizo la última corrección.
 - Las fichas de ingreso en PDF tienen ahora el diseño de los formatos originales del FMI: cabecera con logo, título y código/versión/fecha; FT-GTH-12 Formulario de movimiento (estructura salarial con casillas, declaración en SUNAT, movimiento y cese), FT-GS-03 Solicitud de instalación de software y hardware y FT-GS-01 Solicitud de creación, modificación o desactivación de usuarios, con la firma del gestor al pie. En locación de servicios la ficha de ingreso sale sin cabecera, como el original.
 - Administración › Formato de fichas (administrador de la empresa) y Empresas › Formato de fichas (Super Admin): colores, logo propio o de la marca, título, código, versión y fecha de cada formato, cargo del firmante, anexo por defecto y texto del pie, con vista previa y opción de volver al original.
 - La solicitud de usuarios propone el usuario como nombre.apellido y permite indicar el área y anexo del solicitante.
