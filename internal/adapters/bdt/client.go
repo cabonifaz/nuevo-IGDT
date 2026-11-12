@@ -141,3 +141,20 @@ func (c *Client) SearchTalents(ctx context.Context, key string, q url.Values) (j
 	}
 	return b, nil
 }
+
+// Masters: catálogos de BDT (habilidades técnicas, niveles de idioma y grados) para los filtros del banco de talentos.
+func (c *Client) Masters(ctx context.Context, key, tables string) (json.RawMessage, error) {
+	res, err := c.get(ctx, key, "/integration/v1/masters?tables="+url.QueryEscape(tables))
+	if err != nil {
+		if domain.AsError(err).Code == "BDT_NOT_LINKED" || domain.AsError(err).Code == "TALENT_NOT_FOUND" {
+			return nil, domain.NewError("BDT_SEARCH_DISABLED") // llave sin masters.read (anterior a BDT 1.11)
+		}
+		return nil, err
+	}
+	defer res.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(res.Body, maxSearch+1))
+	if err != nil || len(b) > maxSearch || !json.Valid(b) {
+		return nil, fmt.Errorf("respuesta de BDT inválida")
+	}
+	return b, nil
+}

@@ -236,6 +236,7 @@ func (s *Server) selSearchTalents(w http.ResponseWriter, r *http.Request) {
 	out, err := s.Selection.SearchTalents(r.Context(), principal(r), app.TalentSearch{
 		Q: q.Get("q"), Position: q.Get("position"), Education: q.Get("education"), Skill: q.Get("skill"),
 		English: q.Get("english"), MinYears: q.Get("minYears"), Page: page, PageSize: size,
+		Skills: q.Get("skills"), GradeID: q.Get("gradeId"), Status: q.Get("status"),
 	})
 	if err != nil {
 		s.writeErr(w, r, err)
@@ -243,5 +244,17 @@ func (s *Server) selSearchTalents(w http.ResponseWriter, r *http.Request) {
 	}
 	noStore(w)
 	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(out)
+}
+
+// selTalentMasters: GET /tenant/talent-masters — catálogos de BDT para los filtros del banco de talentos.
+func (s *Server) selTalentMasters(w http.ResponseWriter, r *http.Request) {
+	out, err := s.Selection.TalentMasters(r.Context(), principal(r))
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "private, max-age=300")
 	_, _ = w.Write(out)
 }

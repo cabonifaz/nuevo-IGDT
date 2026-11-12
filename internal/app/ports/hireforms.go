@@ -137,6 +137,7 @@ type BDTReader interface {
 	TalentFile(ctx context.Context, key, talentID, fileID string) (contentType string, body io.ReadCloser, err error)
 	CVSource(ctx context.Context, key, talentID, lang string) (json.RawMessage, error)
 	SearchTalents(ctx context.Context, key string, q url.Values) (json.RawMessage, error)
+	Masters(ctx context.Context, key, tables string) (json.RawMessage, error)
 }
 
 // CatalogLabel: código y etiqueta (es) de un ítem de catálogo.

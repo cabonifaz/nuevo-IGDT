@@ -30,6 +30,7 @@ func (s *Server) selectionRoutes(r chi.Router) {
 	r.With(read, feat).Get("/hire-forms/settings", s.selFormSettings)
 	r.With(s.requirePerm("hire.settings"), feat).Put("/hire-forms/settings", s.selSaveFormSettings)
 	r.With(read, feat).Get("/talents", s.selSearchTalents)
+	r.With(read, feat).Get("/talent-masters", s.selTalentMasters)
 	r.With(read, feat).Get("/talents/{id}", s.selTalent)
 	r.With(read, feat).Get("/talents/{id}/files/{fid}", s.selTalentFile)
 	r.With(read, feat).Get("/talents/{id}/cv-source", s.selTalentCVSource)

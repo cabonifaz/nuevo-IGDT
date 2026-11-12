@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -536,7 +537,7 @@ func (s *SelectionService) TalentFile(ctx context.Context, p *domain.Principal, 
 		return "", nil, err
 	}
 	base := strings.ToLower(strings.TrimSpace(strings.SplitN(ct, ";", 2)[0]))
-	allowed := map[string]bool{"application/pdf": true, "application/msword": true, "image/png": true, "image/jpeg": true,
+	allowed := map[string]bool{"application/pdf": true, "application/msword": true, "image/png": true, "image/jpeg": true, "image/webp": true,
 		"application/vnd.openxmlformats-officedocument.wordprocessingml.document": true}
 	if !allowed[base] {
 		body.Close()
@@ -595,6 +596,7 @@ func (s *SelectionService) TalentCVSource(ctx context.Context, p *domain.Princip
 // TalentSearch: filtros de la búsqueda en el banco de talentos de BDT.
 type TalentSearch struct {
 	Q, Position, Education, Skill, English string
+	Skills, GradeID, Status                string
 	MinYears                               string
 	Page, PageSize                         int
 }
@@ -624,6 +626,31 @@ func (s *SelectionService) SearchTalents(ctx context.Context, p *domain.Principa
 		}
 		q.Set("english", e)
 	}
+	if sk := strings.TrimSpace(f.Skills); sk != "" {
+		ids := strings.Split(sk, ",")
+		if len(ids) > 30 {
+			return nil, domain.ErrValidation
+		}
+		for _, id := range ids {
+			if !validUUID(strings.TrimSpace(id)) {
+				return nil, domain.ErrValidation
+			}
+		}
+		q.Set("skills", sk)
+	}
+	if g := strings.TrimSpace(f.GradeID); g != "" {
+		if !validUUID(g) {
+			return nil, domain.ErrValidation
+		}
+		q.Set("gradeId", g)
+	}
+	switch f.Status {
+	case "":
+	case "ARCHIVED":
+		q.Set("status", f.Status)
+	default:
+		return nil, domain.ErrValidation
+	}
 	if m := strings.TrimSpace(f.MinYears); m != "" {
 		n, err := strconv.ParseFloat(m, 64)
 		if err != nil || n < 0 || n > 60 {
@@ -645,3 +672,34 @@ func (s *SelectionService) SearchTalents(ctx context.Context, p *domain.Principa
 	}
 	return s.BDT.SearchTalents(ctx, key, q)
 }
+
+// TalentMasters: catálogos de BDT para los filtros del banco de talentos (como en BDT): habilidades técnicas, niveles
+// de idioma y grados académicos. Se guardan unos minutos por tenant.
+func (s *SelectionService) TalentMasters(ctx context.Context, p *domain.Principal) (json.RawMessage, error) {
+	tid, err := tenantOf(p)
+	if err != nil {
+		return nil, err
+	}
+	if v, ok := mastersCache.Load(tid); ok {
+		if c := v.(cachedMasters); time.Since(c.at) < 5*time.Minute {
+			return c.doc, nil
+		}
+	}
+	key, err := s.bdtKey(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := s.BDT.Masters(ctx, key, "TECH_SKILL,LANGUAGE_LEVEL,ACADEMIC_GRADE")
+	if err != nil {
+		return nil, err
+	}
+	mastersCache.Store(tid, cachedMasters{doc: doc, at: time.Now()})
+	return doc, nil
+}
+
+type cachedMasters struct {
+	doc json.RawMessage
+	at  time.Time
+}
+
+var mastersCache sync.Map
