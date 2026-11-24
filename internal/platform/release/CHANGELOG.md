@@ -3,6 +3,9 @@
 Formato: `## vMAYOR.MENOR — AAAA-MM-DD`, seguido de los cambios en viñetas (español). Al publicar una versión se
 sube `VERSION` y se agrega su sección aquí: la API la registra al desplegarse en cada ambiente y la notifica.
 
+## v0.9 — 2026-11-24
+- Correo saliente con Resend: las fichas de ingreso y las invitaciones se envían desde no-reply@geeky-tech.es. Si un correo de invitación no sale, la invitación igual queda creada y se informa el motivo.
+
 ## v0.8 — 2026-11-12
 - Banco de talentos con la misma pantalla y experiencia que el Banco de Talentos (BDT): lista angosta con buscador, filtros desplegables (habilidades técnicas del catálogo de BDT, inglés mínimo, años, puesto, carrera, grado académico y archivados) con chips y contador, foto, estrellas y punto de lista negra, y la ficha del talento a la derecha igual que en BDT (contacto con copiar/abrir, experiencia en acordeón, archivos, CV en español, inglés u original). Solo lectura. Los filtros se mantienen en memoria hasta cerrar sesión. Requiere BDT 1.11.
 

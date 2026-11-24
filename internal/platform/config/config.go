@@ -45,6 +45,9 @@ type Config struct {
 	BDTAPIURL string
 	// Correo saliente (SMTP); sin SMTP_HOST los envíos quedan registrados como pendientes de proveedor
 	SMTPHost, SMTPPort, SMTPUser, SMTPPassword, SMTPFrom, SMTPFromName string
+	// Resend (API HTTP, prioridad sobre SMTP): RESEND_API_KEY y remitente MAIL_FROM de un dominio verificado en Resend.
+	// Sin MAIL_FROM se usa el remitente de pruebas de Resend (solo entrega al correo de la cuenta de Resend).
+	ResendAPIKey, MailFrom, MailFromName string
 
 	RateGeneralPerMin int
 	RateAuthPerMin    int
@@ -79,6 +82,7 @@ func Load() (Config, error) {
 		BDTAPIURL:       strings.TrimRight(os.Getenv("BDT_API_URL"), "/"),
 		SMTPHost:        os.Getenv("SMTP_HOST"), SMTPPort: get("SMTP_PORT", "587"), SMTPUser: os.Getenv("SMTP_USER"),
 		SMTPPassword: os.Getenv("SMTP_PASSWORD"), SMTPFrom: os.Getenv("SMTP_FROM"), SMTPFromName: get("SMTP_FROM_NAME", "IGDT"),
+		ResendAPIKey: os.Getenv("RESEND_API_KEY"), MailFrom: get("MAIL_FROM", "onboarding@resend.dev"), MailFromName: get("MAIL_FROM_NAME", "IGDT"),
 		RateGeneralPerMin: intVal("RATE_LIMIT_PER_MIN", 600),
 		RateAuthPerMin:    intVal("RATE_LIMIT_AUTH_PER_MIN", 10),
 	}
