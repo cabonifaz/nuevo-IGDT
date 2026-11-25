@@ -40,3 +40,13 @@ func TestResendSend(t *testing.T) {
 		t.Fatalf("sin llave: %v", err)
 	}
 }
+
+func TestDeliverable(t *testing.T) {
+	got := deliverable([]string{"a@fractal.test", "b@empresa.pe", "c@fractal.igdt.demo", "d@x.example", "e@geeky-tech.es"})
+	if strings.Join(got, ",") != "b@empresa.pe,e@geeky-tech.es" {
+		t.Fatalf("filtrado: %v", got)
+	}
+	if err := (Resend{Key: "k", From: "f@x.pe", BaseURL: "http://127.0.0.1:1"}).Send(context.Background(), ports.Mail{To: []string{"a@x.test"}}); err == nil || !strings.Contains(err.Error(), "prueba") {
+		t.Fatalf("solo dominios de prueba: %v", err)
+	}
+}

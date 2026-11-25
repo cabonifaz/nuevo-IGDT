@@ -62,8 +62,12 @@ func (r Resend) Send(ctx context.Context, m ports.Mail) error {
 	if err != nil {
 		return err
 	}
+	to, cc = deliverable(to), deliverable(cc)
+	if len(to) == 0 && len(cc) > 0 {
+		to, cc = cc[:1], cc[1:]
+	}
 	if len(to) == 0 {
-		return fmt.Errorf("sin destinatarios")
+		return fmt.Errorf("sin destinatarios válidos (los dominios de prueba no reciben correo)")
 	}
 	from := r.From
 	if r.FromName != "" {
@@ -107,4 +111,22 @@ func (r Resend) Send(ctx context.Context, m ports.Mail) error {
 		return fmt.Errorf("resend %d: %s %s", res.StatusCode, e.Name, e.Message)
 	}
 	return nil
+}
+
+// reservedTLD: dominios de prueba que no reciben correo (rebotarían y dañan la reputación del remitente).
+var reservedTLD = map[string]bool{"test": true, "example": true, "invalid": true, "localhost": true, "local": true, "demo": true}
+
+func deliverable(list []string) []string {
+	out := []string{}
+	for _, a := range list {
+		at := strings.LastIndex(a, "@")
+		dom := strings.ToLower(a[at+1:])
+		if i := strings.LastIndex(dom, "."); i >= 0 {
+			dom = dom[i+1:]
+		}
+		if !reservedTLD[dom] {
+			out = append(out, a)
+		}
+	}
+	return out
 }
