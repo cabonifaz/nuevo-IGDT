@@ -3,6 +3,9 @@
 Formato: `## vMAYOR.MENOR — AAAA-MM-DD`, seguido de los cambios en viñetas (español). Al publicar una versión se
 sube `VERSION` y se agrega su sección aquí: la API la registra al desplegarse en cada ambiente y la notifica.
 
+## v0.12 — 2026-11-25
+- La reclutadora puede dirigir en BDT una solicitud de ingreso a un gestor puntual, además de los gestores del cliente (por ejemplo, ciertos RQ de un cliente los atiende otro gestor). Ese gestor la ve en su bandeja, puede aprobar las fichas y recibe los recordatorios.
+
 ## v0.11 — 2026-11-25
 - La fecha tentativa de inicio que Selección registra en BDT al confirmar llega con la solicitud: se propone en la FMI y sirve para avisar las solicitudes por vencer desde que llegan.
 - En staging, todos los correos de prueba van a una sola dirección configurada, con los destinatarios originales indicados en el correo.

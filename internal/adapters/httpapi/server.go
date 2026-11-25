@@ -149,6 +149,7 @@ func (s *Server) Handler() http.Handler {
 		r.With(s.requireScope("requirements.write")).Post("/requirements", s.integrationRequirements)
 		r.With(s.requireScope("hires.write")).Post("/hires", s.integrationHires)
 		r.With(s.requireScope("hires.read")).Get("/hires/events", s.integrationHireEvents)
+		r.With(s.requireScope("hires.write")).Get("/managers", s.integrationManagers)
 		link := r.With(s.requireScope("requirements.write"))
 		link.Get("/bdt-link", s.integrationBDTLink)
 		link.Put("/bdt-link", s.integrationBDTLink)

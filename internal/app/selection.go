@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -152,6 +153,8 @@ type BDTHire struct {
 	ConfirmedByEmail string  `json:"confirmedByEmail"`
 	RQAnalystName    *string `json:"rqAnalystName"`
 	RQAnalystEmail   *string `json:"rqAnalystEmail"`
+	// IGDTManagerID: gestor de IGDT al que la reclutadora dirigió la solicitud (además de los gestores del cliente)
+	IGDTManagerID string `json:"igdtManagerId"`
 }
 
 // SyncResult: resultado por elemento de un envío de BDT (Error = código si se rechazó).
@@ -369,7 +372,8 @@ func (s *SelectionService) hireWrite(h *BDTHire) (ports.HireWrite, error) {
 	}
 	// snapshot sin datos personales del talento; los correos de los solicitantes van cifrados
 	w.Doc, _ = json.Marshal(map[string]any{"requirement": map[string]string{"code": h.Requirement.Code, "title": h.Requirement.Title},
-		"vacancy": h.Vacancy, "conditions": h.Conditions, "confirmedBy": confirmedBy, "requesters": requesters})
+		"vacancy": h.Vacancy, "conditions": h.Conditions, "confirmedBy": confirmedBy, "requesters": requesters,
+		"directedManagerId": optional(h.IGDTManagerID)})
 	return w, nil
 }
 
@@ -692,4 +696,48 @@ func (s *SelectionService) hireRequesters(h *BDTHire) ([]map[string]string, erro
 		}
 	}
 	return out, nil
+}
+
+// optional: el uuid si es válido; si no, nil.
+func optional(id string) any {
+	if validUUID(strings.TrimSpace(id)) {
+		return strings.TrimSpace(id)
+	}
+	return nil
+}
+
+// IntegrationManager: gestor de IGDT para BDT (a quién se puede dirigir una solicitud de ingreso).
+type IntegrationManager struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// IntegrationManagers: gestores del tenant y los gestores (principal y secundario) de cada cliente, para que BDT ofrezca
+// dirigir la solicitud de ingreso a un gestor.
+func (s *SelectionService) IntegrationManagers(ctx context.Context, c *domain.ApiClient) (map[string]any, error) {
+	if c == nil {
+		return nil, domain.NewError("APIKEY_INVALID")
+	}
+	users, clients, err := s.Repo.IntegrationManagers(ctx, c.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := []IntegrationManager{}
+	for _, u := range users {
+		name, _ := s.Cipher.Decrypt(u.NameEnc)
+		out = append(out, IntegrationManager{ID: u.ID, Name: name})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	byClient := map[string]map[string]string{}
+	for _, cm := range clients {
+		if byClient[cm.ClientID] == nil {
+			byClient[cm.ClientID] = map[string]string{}
+		}
+		byClient[cm.ClientID][strings.ToLower(cm.Role)] = cm.UserID
+	}
+	list := []map[string]any{}
+	for id, r := range byClient {
+		list = append(list, map[string]any{"clientId": id, "primaryId": r["primary"], "secondaryId": r["secondary"]})
+	}
+	return map[string]any{"managers": out, "clients": list}, nil
 }

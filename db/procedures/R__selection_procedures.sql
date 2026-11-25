@@ -119,6 +119,14 @@ BEGIN
              taken_at = IF(v_status = 'CANCELLED', NULL, taken_at)
        WHERE id = v_id;
     END IF;
+    IF v_event IN ('NEW', 'REOPENED', 'UPDATED') THEN
+      UPDATE hire_request h SET h.directed_user_id = (
+        SELECT u.id FROM app_user u
+         WHERE u.uuid = JSON_UNQUOTE(JSON_EXTRACT(p_doc, '$.directedManagerId')) AND u.tenant_id = p_tenant_id
+           AND u.deleted_at IS NULL AND u.status = 'ACTIVE'
+           AND EXISTS (SELECT 1 FROM v_user_permission vp WHERE vp.user_id = u.id AND vp.code = 'hire.write'))
+       WHERE h.tenant_id = p_tenant_id AND h.uuid = v_uuid;
+    END IF;
   ELSEIF v_id IS NOT NULL AND v_status IN ('PENDING', 'IN_PROGRESS') THEN
     SET v_event = 'CANCELLED';
     UPDATE hire_request SET status = 'CANCELLED', cancelled_at = NOW(3) WHERE id = v_id;
@@ -158,14 +166,15 @@ BEGIN
            'startDate', COALESCE((SELECT x.start_date FROM hire x WHERE x.id = h.hire_id),
                                  STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(h.draft, '$.hire.startDate')), '%Y-%m-%d'),
                                  STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(h.doc, '$.conditions.startDate')), '%Y-%m-%d')),
-           'canAct', v_admin = 1 OR NOT EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid)
+           'directedTo', (SELECT JSON_OBJECT('id', du.uuid, 'nameEnc', TO_BASE64(du.full_name_enc)) FROM app_user du WHERE du.id = h.directed_user_id),
+           'canAct', v_admin = 1 OR h.directed_user_id <=> p_actor_id OR NOT EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid)
                      OR EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid AND m.user_id = p_actor_id),
            'confirmedAt', h.confirmed_at, 'receivedAt', h.received_at, 'takenAt', h.taken_at, 'cancelledAt', h.cancelled_at,
            'completedAt', h.completed_at, 'revokedAt', h.revoked_at, 'hasDraft', h.draft IS NOT NULL, 'assignedNameEnc', TO_BASE64(u.full_name_enc), 'mine', h.assigned_user_id <=> p_actor_id) AS doc
     FROM hire_request h
     LEFT JOIN app_user u ON u.id = h.assigned_user_id
    WHERE h.tenant_id = p_tenant_id AND (p_status IS NULL OR h.status = p_status)
-     AND (v_admin = 1 OR NOT EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid)
+     AND (v_admin = 1 OR h.directed_user_id <=> p_actor_id OR NOT EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid)
           OR EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid AND m.user_id = p_actor_id))
    ORDER BY FIELD(h.status, 'PENDING', 'IN_PROGRESS', 'CANCELLED', 'COMPLETED', 'REVOKED'), h.received_at DESC
    LIMIT 1000;
@@ -205,7 +214,8 @@ BEGIN
            'startDate', COALESCE((SELECT x.start_date FROM hire x WHERE x.id = h.hire_id),
                                  STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(h.draft, '$.hire.startDate')), '%Y-%m-%d'),
                                  STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(h.doc, '$.conditions.startDate')), '%Y-%m-%d')),
-           'canAct', v_admin = 1 OR NOT EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid)
+           'directedTo', (SELECT JSON_OBJECT('id', du.uuid, 'nameEnc', TO_BASE64(du.full_name_enc)) FROM app_user du WHERE du.id = h.directed_user_id),
+           'canAct', v_admin = 1 OR h.directed_user_id <=> p_actor_id OR NOT EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid)
                      OR EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid AND m.user_id = p_actor_id),
            'dispatches', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('form', d.form, 'reason', d.reason, 'recipients', d.recipients,
                                                                   'status', d.status, 'error', d.error, 'at', d.created_at))

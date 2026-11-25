@@ -13,12 +13,16 @@ CREATE PROCEDURE sp_hire_assert_assignee(IN p_actor_id BIGINT UNSIGNED, IN p_ten
 BEGIN
   DECLARE v_status VARCHAR(12);
   DECLARE v_client CHAR(36);
-  SELECT status, client_uuid INTO v_status, v_client FROM hire_request WHERE tenant_id = p_tenant_id AND uuid = p_uuid;
+  DECLARE v_directed BIGINT UNSIGNED;
+  SELECT status, client_uuid, directed_user_id INTO v_status, v_client, v_directed FROM hire_request WHERE tenant_id = p_tenant_id AND uuid = p_uuid;
   IF v_status IS NULL THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:NOT_FOUND'; END IF;
   IF FIND_IN_SET(IF(v_status = 'PENDING', 'IN_PROGRESS', v_status), p_states) = 0 THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:HIRE_STATE';
   END IF;
-  CALL sp_hire_assert_can_act(p_actor_id, p_tenant_id, v_client);
+  -- el gestor al que Selección dirigió la solicitud también puede actuar
+  IF NOT (v_directed <=> p_actor_id) THEN
+    CALL sp_hire_assert_can_act(p_actor_id, p_tenant_id, v_client);
+  END IF;
 END $$
 
 -- Tomar: una pendiente la toma cualquier gestor; si ya la tiene otro, solo quien puede reasignar (hire.assign).

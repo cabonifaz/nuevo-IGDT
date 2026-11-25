@@ -33,6 +33,7 @@ type HireFormsRepository interface {
 	HireReminderTenants(ctx context.Context) ([]ReminderTenant, error)
 	HireReminderClaim(ctx context.Context, tenantID uint64, kind string, today time.Time, every int) (bool, error)
 	HirePending(ctx context.Context, tenantID uint64) (requests, admins []json.RawMessage, err error)
+	IntegrationManagers(ctx context.Context, tenantID uint64) ([]ManagerUser, []ClientManagerRef, error)
 	HireFormStyle(ctx context.Context, tenantID uint64) (json.RawMessage, error)
 	HireFormStyleSave(ctx context.Context, m Meta, tenantID uint64, style json.RawMessage, clearLogo bool) error
 	HireFormLogoSet(ctx context.Context, m Meta, tenantID uint64, fileUUID string) error
@@ -176,4 +177,14 @@ type ReminderTenant struct {
 	Slug         string
 	Company      string
 	ReminderDays int
+}
+
+// ManagerUser: gestor (uuid y nombre cifrado). ClientManagerRef: gestor de un cliente.
+type ManagerUser struct {
+	ID      string
+	NameEnc []byte
+}
+
+type ClientManagerRef struct {
+	ClientID, Role, UserID string
 }

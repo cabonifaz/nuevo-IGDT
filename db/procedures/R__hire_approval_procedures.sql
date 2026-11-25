@@ -220,10 +220,13 @@ BEGIN
                                 IF(h.draft IS NOT NULL, IF(JSON_TYPE(JSON_EXTRACT(h.draft, '$.equipment')) = 'OBJECT', 1, 0), NULL),
                                 IF(JSON_EXTRACT(h.doc, '$.conditions.laptop') = CAST('true' AS JSON), 1, 0)) = 1,
            'approved', IFNULL((SELECT JSON_ARRAYAGG(a.form) FROM hire_form_approval a WHERE a.hire_request_id = h.id), JSON_ARRAY()),
-           'managers', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('id', u.uuid, 'userId', u.id, 'role', m.role, 'nameEnc', TO_BASE64(u.full_name_enc),
-                                                               'emailEnc', TO_BASE64(u.email_enc), 'locale', u.locale))
-                                 FROM client_manager m JOIN app_user u ON u.id = m.user_id AND u.status = 'ACTIVE' AND u.deleted_at IS NULL
-                                WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid), JSON_ARRAY())) AS doc
+           'managers', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('id', u.uuid, 'userId', u.id,
+                                    'role', IFNULL((SELECT m.role FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid AND m.user_id = u.id LIMIT 1), 'DIRECTED'),
+                                    'nameEnc', TO_BASE64(u.full_name_enc), 'emailEnc', TO_BASE64(u.email_enc), 'locale', u.locale))
+                                 FROM app_user u
+                                WHERE u.status = 'ACTIVE' AND u.deleted_at IS NULL
+                                  AND (u.id = h.directed_user_id
+                                       OR u.id IN (SELECT m.user_id FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid))), JSON_ARRAY())) AS doc
     FROM hire_request h
     LEFT JOIN hire x ON x.id = h.hire_id
    WHERE h.tenant_id = p_tenant_id AND h.status IN ('PENDING', 'IN_PROGRESS')
@@ -234,4 +237,20 @@ BEGIN
      AND EXISTS (SELECT 1 FROM v_user_permission vp WHERE vp.user_id = u.id AND vp.code = 'hire.assign');
 END $$
 
+DELIMITER ;
+
+DELIMITER $$
+-- Para BDT (API de integración): gestores de IGDT a los que se puede dirigir una solicitud de ingreso y los gestores de
+-- cada cliente.
+DROP PROCEDURE IF EXISTS sp_integration_managers $$
+CREATE PROCEDURE sp_integration_managers(IN p_tenant_id BIGINT UNSIGNED)
+BEGIN
+  SELECT u.uuid, u.full_name_enc
+    FROM app_user u
+   WHERE u.tenant_id = p_tenant_id AND u.deleted_at IS NULL AND u.status = 'ACTIVE'
+     AND EXISTS (SELECT 1 FROM v_user_permission vp WHERE vp.user_id = u.id AND vp.code = 'hire.write');
+  SELECT m.client_uuid, m.role, u.uuid
+    FROM client_manager m JOIN app_user u ON u.id = m.user_id
+   WHERE m.tenant_id = p_tenant_id ORDER BY m.client_uuid, FIELD(m.role, 'PRIMARY', 'SECONDARY');
+END $$
 DELIMITER ;

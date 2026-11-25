@@ -114,3 +114,37 @@ func (r SelectionRepo) HirePending(ctx context.Context, tenantID uint64) (reques
 	}
 	return requests, admins, rs.Close()
 }
+
+func (r SelectionRepo) IntegrationManagers(ctx context.Context, tenantID uint64) ([]ports.ManagerUser, []ports.ClientManagerRef, error) {
+	rs, err := r.call(ctx, "sp_integration_managers", tenantID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rs.Close()
+	users, refs := []ports.ManagerUser{}, []ports.ClientManagerRef{}
+	if rs.Next() {
+		if err := rs.Each(func(scan func(...any) error) error {
+			var u ports.ManagerUser
+			if err := scan(&u.ID, &u.NameEnc); err != nil {
+				return err
+			}
+			users = append(users, u)
+			return nil
+		}); err != nil {
+			return nil, nil, err
+		}
+	}
+	if rs.Next() {
+		if err := rs.Each(func(scan func(...any) error) error {
+			var c ports.ClientManagerRef
+			if err := scan(&c.ClientID, &c.Role, &c.UserID); err != nil {
+				return err
+			}
+			refs = append(refs, c)
+			return nil
+		}); err != nil {
+			return nil, nil, err
+		}
+	}
+	return users, refs, rs.Close()
+}

@@ -77,3 +77,15 @@ func (s *Server) selClientManagerCandidates(w http.ResponseWriter, r *http.Reque
 	}
 	writeJSON(w, http.StatusOK, out)
 }
+
+// GET /integration/v1/managers (alcance hires.write): gestores de IGDT y los gestores de cada cliente, para que BDT
+// permita dirigir la solicitud de ingreso a un gestor.
+func (s *Server) integrationManagers(w http.ResponseWriter, r *http.Request) {
+	out, err := s.Selection.IntegrationManagers(r.Context(), apiClient(r))
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	noStore(w)
+	writeJSON(w, http.StatusOK, out)
+}
