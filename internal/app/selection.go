@@ -143,8 +143,13 @@ type BDTHire struct {
 		Phone          string `json:"phone"`
 	} `json:"talent"`
 	Conditions  bdtConditions `json:"conditions"`
-	ConfirmedBy string        `json:"confirmedBy"`
+	ConfirmedBy string        `json:"confirmedBy"` // compatibilidad (BDT envía confirmedByName)
 	ConfirmedAt time.Time     `json:"confirmedAt"`
+	// solicitantes (BDT 1.14): quien confirmó el ingreso y el analista responsable del RQ; reciben las fichas
+	ConfirmedByName  string  `json:"confirmedByName"`
+	ConfirmedByEmail string  `json:"confirmedByEmail"`
+	RQAnalystName    *string `json:"rqAnalystName"`
+	RQAnalystEmail   *string `json:"rqAnalystEmail"`
 }
 
 // SyncResult: resultado por elemento de un envío de BDT (Error = código si se rechazó).
@@ -349,9 +354,17 @@ func (s *SelectionService) hireWrite(h *BDTHire) (ports.HireWrite, error) {
 	w.DocTypeCode, w.DocTypeLabel = t.DocType.Code, t.DocType.Label
 	w.ClientID, w.ClientLabel, w.ProfileID, w.ProfileLabel = h.Client.ID, h.Client.Label, h.Vacancy.Profile.ID, h.Vacancy.Profile.Label
 	w.ConfirmedAt = h.ConfirmedAt
-	// snapshot sin datos personales
+	confirmedBy := strings.TrimSpace(h.ConfirmedByName)
+	if confirmedBy == "" {
+		confirmedBy = strings.TrimSpace(h.ConfirmedBy)
+	}
+	requesters, err := s.hireRequesters(h)
+	if err != nil {
+		return w, err
+	}
+	// snapshot sin datos personales del talento; los correos de los solicitantes van cifrados
 	w.Doc, _ = json.Marshal(map[string]any{"requirement": map[string]string{"code": h.Requirement.Code, "title": h.Requirement.Title},
-		"vacancy": h.Vacancy, "conditions": h.Conditions, "confirmedBy": h.ConfirmedBy})
+		"vacancy": h.Vacancy, "conditions": h.Conditions, "confirmedBy": confirmedBy, "requesters": requesters})
 	return w, nil
 }
 
@@ -631,6 +644,43 @@ func (s *SelectionService) Assignees(ctx context.Context, p *domain.Principal) (
 	out := make([]json.RawMessage, 0, len(docs))
 	for _, d := range docs {
 		out = append(out, decryptNames(s.Cipher, d))
+	}
+	return out, nil
+}
+
+// hireRequesters: solicitantes de la ficha (quien confirmó en BDT y el analista del RQ), sin repetir el mismo correo,
+// con nombre y correo cifrados (claves nameEnc y emailEnc).
+func (s *SelectionService) hireRequesters(h *BDTHire) ([]map[string]string, error) {
+	out := []map[string]string{}
+	seen := map[string]bool{}
+	add := func(role, name, email string) error {
+		name, email = strings.TrimSpace(name), strings.ToLower(strings.TrimSpace(email))
+		if email == "" || seen[email] || !optEmail(email) || !maxLen(200, name) {
+			return nil // sin correo válido no recibe la ficha
+		}
+		seen[email] = true
+		ne, err := s.encrypt(name)
+		if err != nil {
+			return err
+		}
+		ee, err := s.encrypt(email)
+		if err != nil {
+			return err
+		}
+		out = append(out, map[string]string{"role": role, "nameEnc": base64.StdEncoding.EncodeToString(ne), "emailEnc": base64.StdEncoding.EncodeToString(ee)})
+		return nil
+	}
+	if err := add("CONFIRMED_BY", h.ConfirmedByName, h.ConfirmedByEmail); err != nil {
+		return nil, err
+	}
+	if h.RQAnalystEmail != nil {
+		name := ""
+		if h.RQAnalystName != nil {
+			name = *h.RQAnalystName
+		}
+		if err := add("RQ_ANALYST", name, *h.RQAnalystEmail); err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
 }

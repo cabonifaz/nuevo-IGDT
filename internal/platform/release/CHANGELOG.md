@@ -3,6 +3,12 @@
 Formato: `## vMAYOR.MENOR — AAAA-MM-DD`, seguido de los cambios en viñetas (español). Al publicar una versión se
 sube `VERSION` y se agrega su sección aquí: la API la registra al desplegarse en cada ambiente y la notifica.
 
+## v0.10 — 2026-11-25
+- Aprobación de ingresos por ficha: cada cliente tiene un gestor principal y uno secundario (los asigna el administrador en Clientes). Cualquiera de los dos, o un administrador, edita y aprueba cada ficha por separado: ingreso (FMI), usuarios y, si aplica, equipo. La de equipo requiere la de usuarios aprobada. Ya no hace falta tomar la solicitud.
+- Cada ficha se envía por correo al aprobarla, con el formato de los correos del FMI: la FMI a los solicitantes (quien confirmó en BDT y el analista del RQ) con copia a Talento; usuarios y equipo a Soporte con copia a los solicitantes; y siempre las copias fijas. Se configuran en Administración › Fichas de ingreso.
+- Cada gestor ve en la bandeja las solicitudes de sus clientes (y las de clientes sin gestores).
+- Alerta destacada de solicitudes pendientes, por vencer (inician en 3 días o menos) y vencidas; aviso diario en las notificaciones y correo a los gestores cada 2 o 3 días (configurable).
+
 ## v0.9 — 2026-11-24
 - Correo saliente con Resend: las fichas de ingreso y las invitaciones se envían desde no-reply@geeky-tech.es. Si un correo de invitación no sale, la invitación igual queda creada y se informa el motivo.
 

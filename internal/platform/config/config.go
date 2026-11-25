@@ -48,6 +48,9 @@ type Config struct {
 	// Resend (API HTTP, prioridad sobre SMTP): RESEND_API_KEY y remitente MAIL_FROM de un dominio verificado en Resend.
 	// Sin MAIL_FROM se usa el remitente de pruebas de Resend (solo entrega al correo de la cuenta de Resend).
 	ResendAPIKey, MailFrom, MailFromName string
+	// Recordatorios de solicitudes de ingreso pendientes (notificación diaria y correo cada 2 o 3 días). HIRE_REMINDERS=on|off;
+	// por defecto apagado en local (comparte la base de staging) y encendido en los demás ambientes.
+	HireReminders bool
 
 	RateGeneralPerMin int
 	RateAuthPerMin    int
@@ -83,6 +86,7 @@ func Load() (Config, error) {
 		SMTPHost:        os.Getenv("SMTP_HOST"), SMTPPort: get("SMTP_PORT", "587"), SMTPUser: os.Getenv("SMTP_USER"),
 		SMTPPassword: os.Getenv("SMTP_PASSWORD"), SMTPFrom: os.Getenv("SMTP_FROM"), SMTPFromName: get("SMTP_FROM_NAME", "IGDT"),
 		ResendAPIKey: os.Getenv("RESEND_API_KEY"), MailFrom: get("MAIL_FROM", "onboarding@resend.dev"), MailFromName: get("MAIL_FROM_NAME", "IGDT"),
+		HireReminders:     os.Getenv("HIRE_REMINDERS") == "on" || (os.Getenv("HIRE_REMINDERS") == "" && get("APP_ENV", "local") != "local"),
 		RateGeneralPerMin: intVal("RATE_LIMIT_PER_MIN", 600),
 		RateAuthPerMin:    intVal("RATE_LIMIT_AUTH_PER_MIN", 10),
 	}

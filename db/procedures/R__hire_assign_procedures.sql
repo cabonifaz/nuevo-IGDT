@@ -1,20 +1,24 @@
 -- =====================================================================
--- Asignación de las solicitudes de ingreso: solo el gestor asignado las trabaja; el admin las reasigna.
+-- Solicitudes de ingreso: las trabajan los gestores del cliente (o el admin). Tomar/reasignar quedan como registro de quién
+-- la atiende; ya no limitan quién puede aprobar.
 -- =====================================================================
 DELIMITER $$
 
--- La solicitud debe estar en uno de p_states (lista separada por comas) y asignada al actor.
+-- La solicitud debe estar en uno de p_states (lista separada por comas; una PENDING cuenta como IN_PROGRESS) y el actor
+-- debe poder actuar sobre ella: gestor principal o secundario de su cliente, administrador (hire.assign) o cualquier
+-- gestor si el cliente no tiene gestores (sp_hire_assert_can_act). Ya no hace falta tomarla antes.
 DROP PROCEDURE IF EXISTS sp_hire_assert_assignee $$
 CREATE PROCEDURE sp_hire_assert_assignee(IN p_actor_id BIGINT UNSIGNED, IN p_tenant_id BIGINT UNSIGNED, IN p_uuid CHAR(36),
   IN p_states VARCHAR(60))
 BEGIN
   DECLARE v_status VARCHAR(12);
-  DECLARE v_user BIGINT UNSIGNED;
-  SELECT status, assigned_user_id INTO v_status, v_user FROM hire_request WHERE tenant_id = p_tenant_id AND uuid = p_uuid;
+  DECLARE v_client CHAR(36);
+  SELECT status, client_uuid INTO v_status, v_client FROM hire_request WHERE tenant_id = p_tenant_id AND uuid = p_uuid;
   IF v_status IS NULL THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:NOT_FOUND'; END IF;
-  IF v_status = 'PENDING' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:HIRE_NOT_TAKEN'; END IF;
-  IF FIND_IN_SET(v_status, p_states) = 0 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:HIRE_STATE'; END IF;
-  IF v_user IS NULL OR v_user <> p_actor_id THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:HIRE_NOT_ASSIGNED'; END IF;
+  IF FIND_IN_SET(IF(v_status = 'PENDING', 'IN_PROGRESS', v_status), p_states) = 0 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:HIRE_STATE';
+  END IF;
+  CALL sp_hire_assert_can_act(p_actor_id, p_tenant_id, v_client);
 END $$
 
 -- Tomar: una pendiente la toma cualquier gestor; si ya la tiene otro, solo quien puede reasignar (hire.assign).

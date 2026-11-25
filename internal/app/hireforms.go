@@ -28,9 +28,15 @@ var formMeta = map[string]struct{ Code, Title, File string }{
 	"USERS":     {"FT-GS-01", "Solicitud de Creación de Usuarios", "Solicitud_de_usuarios"},
 }
 
-// HireFormSettings: destinatarios de cada ficha, copia al gestor, días de gracia para corregir y dominio corporativo.
+// HireFormSettings: destinatarios por grupo (soporte: usuarios y equipo; talento: FMI; copias fijas en todas), copia al
+// gestor que aprueba, días de gracia para corregir, cada cuántos días se recuerdan los pendientes y dominio corporativo.
+// Los solicitantes (quien confirmó en BDT y el analista del RQ) se agregan solos a cada envío.
 type HireFormSettings struct {
-	Recipients      map[string][]string `json:"recipients"`
+	Recipients      map[string][]string `json:"recipients,omitempty"` // compatibilidad: por ficha (derivado de los grupos)
+	SupportEmails   []string            `json:"supportEmails"`
+	TalentEmails    []string            `json:"talentEmails"`
+	CCEmails        []string            `json:"ccEmails"`
+	ReminderDays    int                 `json:"reminderDays"`
 	CCManager       bool                `json:"ccManager"`
 	EditGraceDays   int                 `json:"editGraceDays"`
 	CorporateDomain string              `json:"corporateDomain"`
@@ -54,6 +60,14 @@ func (s *SelectionService) settings(ctx context.Context, tid uint64) (*HireFormS
 		if out.Recipients[f] == nil {
 			out.Recipients[f] = []string{}
 		}
+	}
+	for _, l := range []*[]string{&out.SupportEmails, &out.TalentEmails, &out.CCEmails} {
+		if *l == nil {
+			*l = []string{}
+		}
+	}
+	if out.ReminderDays != 3 {
+		out.ReminderDays = 2
 	}
 	return &out, nil
 }
@@ -80,28 +94,49 @@ func (s *SelectionService) SaveFormSettings(ctx context.Context, p *domain.Princ
 			return domain.ErrValidation
 		}
 	}
-	rec := map[string][]string{}
-	for _, f := range FormCodes {
-		list := []string{}
-		seen := map[string]bool{}
-		for _, e := range in.Recipients[f] {
+	// compatibilidad: destinatarios por ficha (pantalla anterior) -> grupos
+	if in.SupportEmails == nil && in.TalentEmails == nil && len(in.Recipients) > 0 {
+		in.SupportEmails = append(append([]string{}, in.Recipients["USERS"]...), in.Recipients["EQUIPMENT"]...)
+		in.TalentEmails = in.Recipients["FMI"]
+	}
+	if in.ReminderDays == 0 {
+		in.ReminderDays = 2
+	}
+	if in.ReminderDays != 2 && in.ReminderDays != 3 {
+		return domain.ErrValidation
+	}
+	clean := func(list []string) ([]string, error) {
+		out, seen := []string{}, map[string]bool{}
+		for _, e := range list {
 			e = strings.ToLower(strings.TrimSpace(e))
 			if e == "" || seen[e] {
 				continue
 			}
 			if a, err := mail.ParseAddress(e); err != nil || a.Address != e || len(e) > 150 {
-				return domain.ErrValidation
+				return nil, domain.ErrValidation
 			}
 			seen[e] = true
-			list = append(list, e)
+			out = append(out, e)
 		}
-		if len(list) > 20 {
-			return domain.ErrValidation
+		if len(out) > 20 {
+			return nil, domain.ErrValidation
 		}
-		rec[f] = list
+		return out, nil
 	}
-	raw, _ := json.Marshal(rec)
-	return s.Repo.HireFormSettingSave(ctx, meta(p, ip), tid, raw, in.CCManager, in.EditGraceDays, in.CorporateDomain)
+	sup, err := clean(in.SupportEmails)
+	if err != nil {
+		return err
+	}
+	tal, err := clean(in.TalentEmails)
+	if err != nil {
+		return err
+	}
+	cc, err := clean(in.CCEmails)
+	if err != nil {
+		return err
+	}
+	return s.Repo.HireFormSettingSave(ctx, meta(p, ip), tid, ports.HireFormSettingInput{Support: sup, Talent: tal, CC: cc,
+		CCManager: in.CCManager, GraceDays: in.EditGraceDays, ReminderDays: in.ReminderDays, Domain: in.CorporateDomain})
 }
 
 // ---------------- Impresión ----------------
@@ -377,7 +412,12 @@ func (s *SelectionService) FormPDF(ctx context.Context, p *domain.Principal, req
 			return nil, "", err
 		}
 	}
-	c, err := s.formContext(ctx, p, tid, requestID, preview, false)
+	var c *formContext
+	if preview != nil {
+		c, err = s.formContext(ctx, p, tid, requestID, preview, false)
+	} else {
+		c, err = s.formContextFor(ctx, p, tid, requestID, form, false)
+	}
 	if err != nil {
 		return nil, "", err
 	}
@@ -415,76 +455,6 @@ func (s *SelectionService) dispatchAsync(p *domain.Principal, tid uint64, reques
 			slog.Warn("no se pudieron enviar las fichas", "request", requestID, "reason", reason, "err", err)
 		}
 	}()
-}
-
-var reasonSubject = map[string]string{
-	"CONFIRMED": "Ingreso nuevo talento", "UPDATED": "Actualización de ingreso", "RESENT": "Reenvío de ingreso", "REVOKED": "Ingreso revocado",
-}
-
-func (s *SelectionService) dispatch(ctx context.Context, p *domain.Principal, tid uint64, requestID, reason string, only []string) error {
-	c, err := s.formContext(ctx, p, tid, requestID, nil, true)
-	if err != nil {
-		return err
-	}
-	var revokeReason string
-	if reason == "REVOKED" {
-		if m, err := s.hireOf(ctx, p, tid, requestID); err == nil && m != nil {
-			revokeReason = str(m, "revokeReason")
-		}
-	}
-	forms := []string{"FMI"}
-	if c.forms.Equipment != nil {
-		forms = append(forms, "EQUIPMENT")
-	}
-	if c.forms.Users != nil {
-		forms = append(forms, "USERS")
-	}
-	cc := []string{}
-	if c.settings.CCManager && p.Email != "" {
-		cc = append(cc, p.Email)
-	}
-	rq, client := str(c.req, "requirement", "code"), str(c.req, "client", "label")
-	link := strings.TrimRight(s.AppURL, "/") + "/" + p.TenantSlug + "/solicitudes/" + requestID
-	for _, form := range forms {
-		if len(only) > 0 && !contains(only, form) {
-			continue
-		}
-		to := c.settings.Recipients[form]
-		if len(to) == 0 {
-			_ = s.Repo.HireFormDispatchAdd(ctx, p.UserID, tid, requestID, form, reason, nil, "NO_RECIPIENTS", "")
-			continue
-		}
-		m := c.header(form)
-		subject := fmt.Sprintf("%s | %s | %s | %s · %s", reasonSubject[reason], rq, client, m.Code, c.talentName())
-		var text strings.Builder
-		fmt.Fprintf(&text, "%s\n\nColaborador: %s\nCliente: %s\nRequerimiento: %s\nCargo: %s\nFecha de inicio: %s\n",
-			m.Title, c.talentName(), client, rq, c.forms.Hire.Position, fmtDate(c.forms.Hire.StartDate))
-		mailMsg := ports.Mail{To: to, Cc: cc, Subject: subject}
-		if reason == "REVOKED" {
-			fmt.Fprintf(&text, "\nEl ingreso fue revocado. Motivo: %s\nNo es necesario atender la solicitud adjunta anteriormente.\n", revokeReason)
-		} else {
-			pdf, err := s.Renderer.Render(c.build(form))
-			if err != nil {
-				_ = s.Repo.HireFormDispatchAdd(ctx, p.UserID, tid, requestID, form, reason, to, "FAILED", err.Error())
-				continue
-			}
-			if reason == "UPDATED" {
-				text.WriteString("\nSe actualizaron los datos del ingreso; la ficha adjunta reemplaza a la anterior.\n")
-			}
-			mailMsg.Attachments = []ports.MailAttachment{{Name: fileName(form, c.talentName()), ContentType: "application/pdf", Data: pdf}}
-		}
-		fmt.Fprintf(&text, "\nGestor de servicios: %s\nDetalle en IGDT: %s\n", c.manager, link)
-		mailMsg.Text = text.String()
-		status, errText := "SENT", ""
-		if err := s.Mail.Send(ctx, mailMsg); err != nil {
-			status, errText = "FAILED", err.Error()
-			if err == ports.ErrNoMailer {
-				status, errText = "NO_MAILER", ""
-			}
-		}
-		_ = s.Repo.HireFormDispatchAdd(ctx, p.UserID, tid, requestID, form, reason, to, status, errText)
-	}
-	return nil
 }
 
 // ---------------- Perfil del candidato (lectura de BDT) ----------------

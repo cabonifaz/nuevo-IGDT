@@ -80,6 +80,11 @@ func Build(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, erro
 	versions := &app.VersionService{Repo: mysql.VersionRepo{Store: store}, Notifier: notifications, Env: cfg.Env,
 		Version: release.Version(), Commit: cfg.CommitSHA, Notes: release.Notes(release.Version()), Peers: app.ParsePeers(cfg.EnvURLs)}
 	go versions.Register(context.Background())
+	selection := &app.SelectionService{Repo: mysql.SelectionRepo{Store: store}, Cipher: cipher, Notifier: notifications, Features: features,
+		Renderer: forms.Renderer{}, Mail: mail, BDT: bdt.New(cfg.BDTAPIURL), AppURL: cfg.PublicAppURL, Storage: files, Files: fileRepo}
+	if cfg.HireReminders {
+		go selection.RunReminders(ctx) // avisos diarios y correos de solicitudes de ingreso pendientes
+	}
 	srv := httpapi.NewServer(httpapi.Config{CORSOrigins: cfg.CORSOrigins, TrustProxy: cfg.TrustProxy,
 		CookieSecure: !cfg.IsLocal(), RateGeneral: cfg.RateGeneralPerMin, RateAuth: cfg.RateAuthPerMin}, log, httpapi.Deps{
 		Auth:          auth,
@@ -90,16 +95,15 @@ func Build(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, erro
 		Files:         &app.FileService{Repo: fileRepo, Storage: files, Tenants: tenantRepo},
 		Notifications: notifications,
 		Catalogs:      &app.CatalogService{Repo: mysql.CatalogRepo{Store: store}},
-		Selection: &app.SelectionService{Repo: mysql.SelectionRepo{Store: store}, Cipher: cipher, Notifier: notifications, Features: features,
-			Renderer: forms.Renderer{}, Mail: mail, BDT: bdt.New(cfg.BDTAPIURL), AppURL: cfg.PublicAppURL, Storage: files, Files: fileRepo},
-		Features:     features,
-		Versions:     versions,
-		Support:      &app.SupportService{Repo: mysql.SupportRepo{Store: store}, Cipher: cipher, Storage: files, Notifier: notifications},
-		Sync:         mysql.SyncRepo{Store: store},
-		Audit:        mysql.AuditRepo{Store: store},
-		Translations: mysql.TranslationRepo{Store: store},
-		Tokens:       issuer,
-		Health:       func() error { return store.Ping(context.Background()) },
+		Selection:     selection,
+		Features:      features,
+		Versions:      versions,
+		Support:       &app.SupportService{Repo: mysql.SupportRepo{Store: store}, Cipher: cipher, Storage: files, Notifier: notifications},
+		Sync:          mysql.SyncRepo{Store: store},
+		Audit:         mysql.AuditRepo{Store: store},
+		Translations:  mysql.TranslationRepo{Store: store},
+		Tokens:        issuer,
+		Health:        func() error { return store.Ping(context.Background()) },
 	})
 	return &App{DB: db, Auth: auth, Server: srv}, nil
 }

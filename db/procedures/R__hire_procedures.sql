@@ -68,9 +68,19 @@ BEGIN
          NULLIF(TRIM(p_notes), ''), p_actor_id
     FROM hire_request h WHERE h.id = v_req;
   SET v_hire = LAST_INSERT_ID();
-  UPDATE hire_request SET status = 'COMPLETED', completed_at = NOW(3), hire_id = v_hire, draft = NULL, draft_pay_enc = NULL,
+  -- aprobar la FMI registra el ingreso; la solicitud se completa cuando también están aprobadas las demás fichas
+  UPDATE hire_request SET hire_id = v_hire, status = IF(status = 'PENDING', 'IN_PROGRESS', status),
          assigned_user_id = IFNULL(assigned_user_id, p_actor_id), taken_at = IFNULL(taken_at, NOW(3))
    WHERE id = v_req;
+  INSERT INTO hire_form_approval (tenant_id, hire_request_id, form, data, approved_by)
+  VALUES (p_tenant_id, v_req, 'FMI', JSON_OBJECT('approvedWithHire', TRUE), p_actor_id)
+  ON DUPLICATE KEY UPDATE updated_at = NOW(3), updated_by = p_actor_id;
+  -- las fichas de usuarios y equipo ya aprobadas quedan en el ingreso
+  UPDATE hire x SET
+    x.user_request = IFNULL((SELECT JSON_EXTRACT(a.data, '$.users') FROM hire_form_approval a WHERE a.hire_request_id = v_req AND a.form = 'USERS'), x.user_request),
+    x.equipment_request = IFNULL((SELECT JSON_EXTRACT(a.data, '$.equipment') FROM hire_form_approval a WHERE a.hire_request_id = v_req AND a.form = 'EQUIPMENT'), x.equipment_request)
+   WHERE x.id = v_hire;
+  CALL sp_hire_recompute(v_req);
   INSERT INTO hire_event (tenant_id, type, candidate_uuid, requirement_uuid, data)
   SELECT p_tenant_id, 'HIRED', h.candidate_uuid, h.requirement_uuid,
          JSON_OBJECT('hireId', p_hire_uuid, 'employeeId', (SELECT uuid FROM employee WHERE id = v_emp), 'talentId', h.talent_uuid,
@@ -113,7 +123,7 @@ BEGIN
                                 LEFT JOIN app_user cu2 ON cu2.id = hc.created_by), JSON_ARRAY()),
            'dispatches', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('form', d.form, 'reason', d.reason, 'recipients', d.recipients,
                                                                   'status', d.status, 'error', d.error, 'at', d.created_at))
-                                   FROM (SELECT * FROM hire_form_dispatch WHERE hire_id = x.id ORDER BY id DESC LIMIT 60) d), JSON_ARRAY())) AS doc
+                                   FROM (SELECT * FROM hire_form_dispatch WHERE hire_request_id = x.hire_request_id ORDER BY id DESC LIMIT 60) d), JSON_ARRAY())) AS doc
     FROM hire_request h
     JOIN hire x ON x.id = h.hire_id
     JOIN employee e ON e.id = x.employee_id

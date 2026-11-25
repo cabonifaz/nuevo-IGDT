@@ -10,8 +10,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/google/uuid"
-
 	"github.com/cabonifaz/nuevo-IGDT/internal/app/ports"
 	"github.com/cabonifaz/nuevo-IGDT/internal/domain"
 )
@@ -253,83 +251,19 @@ func (s *SelectionService) draftOf(ctx context.Context, p *domain.Principal, tid
 	return &f, m, nil
 }
 
-// CompleteHire confirma las fichas: registra el ingreso, el talento queda como colaborador, BDT se entera (HIRED) y
-// cada ficha se envía a sus destinatarios.
+// CompleteHire (compatibilidad): aprueba la FMI; las fichas de usuarios y equipo se aprueban aparte (ApproveForm).
 func (s *SelectionService) CompleteHire(ctx context.Context, p *domain.Principal, ip, requestID string, f HireForms) (string, error) {
-	tid, err := tenantOf(p)
+	res, err := s.ApproveForm(ctx, p, ip, requestID, "FMI", f)
 	if err != nil {
 		return "", err
 	}
-	if !validUUID(requestID) {
-		return "", domain.ErrValidation
-	}
-	if err := f.validate(true); err != nil {
-		return "", err
-	}
-	if f.Hire.Pay == nil { // remuneración del borrador (la pudo ingresar otro gestor)
-		if d, _, err := s.draftOf(ctx, p, tid, requestID, true); err == nil && d != nil {
-			f.Hire.Pay = d.Hire.Pay
-		}
-	}
-	if !validPay(f.Hire.Pay) {
-		return "", domain.ErrValidation
-	}
-	enc, err := s.encryptPay(f.Hire.Pay)
-	if err != nil {
-		return "", err
-	}
-	in := hireInput(requestID, &f, enc)
-	in.HireID, in.EmployeeID = uuid.NewString(), uuid.NewString()
-	if err := s.Repo.HireComplete(ctx, meta(p, ip), tid, in); err != nil {
-		return "", err
-	}
-	s.dispatchAsync(p, tid, requestID, "CONFIRMED", nil)
-	return in.HireID, nil
+	return res.HireID, nil
 }
 
-// UpdateHire corrige el ingreso confirmado (hasta la fecha de inicio más los días de gracia). Registra qué cambió,
-// avisa a BDT si cambió la fecha de inicio y reenvía las fichas actualizadas.
+// UpdateHire (compatibilidad): corrige la FMI ya aprobada y la reenvía.
 func (s *SelectionService) UpdateHire(ctx context.Context, p *domain.Principal, ip, requestID string, f HireForms) error {
-	tid, err := tenantOf(p)
-	if err != nil {
-		return err
-	}
-	if !validUUID(requestID) {
-		return domain.ErrValidation
-	}
-	if err := f.validate(true); err != nil {
-		return err
-	}
-	old, err := s.formsOfHire(ctx, p, tid, requestID)
-	if err != nil {
-		return err
-	}
-	if old == nil {
-		return domain.ErrNotFound
-	}
-	if f.Hire.Pay != nil && !validPay(f.Hire.Pay) {
-		return domain.ErrValidation
-	}
-	if f.Hire.StartDate != old.Hire.StartDate && strings.TrimSpace(f.Reason) == "" {
-		return domain.NewError("REASON_REQUIRED")
-	}
-	changes, err := s.diffForms(ctx, tid, old, &f)
-	if err != nil {
-		return err
-	}
-	if len(changes) == 0 {
-		return nil
-	}
-	enc, err := s.encryptPay(f.Hire.Pay)
-	if err != nil {
-		return err
-	}
-	if err := s.Repo.HireUpdate(ctx, meta(p, ip), tid, ports.HireUpdate{HireInput: hireInput(requestID, &f, enc),
-		ChangeReason: strings.TrimSpace(f.Reason), Changes: rawOrNil(changes)}); err != nil {
-		return err
-	}
-	s.dispatchAsync(p, tid, requestID, "UPDATED", nil)
-	return nil
+	_, err := s.ApproveForm(ctx, p, ip, requestID, "FMI", f)
+	return err
 }
 
 // RevokeHire: el cliente anuló el ingreso. BDT lo sabe (REVOKED) y los destinatarios de las fichas reciben el aviso.
@@ -366,7 +300,7 @@ func (s *SelectionService) ResendForms(ctx context.Context, p *domain.Principal,
 			return domain.ErrValidation
 		}
 	}
-	if err := s.Repo.HireAssertAssignee(ctx, meta(p, ""), tid, requestID, "COMPLETED"); err != nil {
+	if err := s.Repo.HireAssertAssignee(ctx, meta(p, ""), tid, requestID, "IN_PROGRESS,COMPLETED"); err != nil {
 		return err
 	}
 	h, err := s.formsOfHire(ctx, p, tid, requestID)

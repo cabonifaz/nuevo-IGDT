@@ -49,8 +49,16 @@ func (r SelectionRepo) HireFormSetting(ctx context.Context, tenantID uint64) (js
 	return firstDoc(docRepo(r).rawDocs(ctx, "sp_hire_form_setting_get", tenantID))
 }
 
-func (r SelectionRepo) HireFormSettingSave(ctx context.Context, m ports.Meta, tenantID uint64, recipients json.RawMessage, ccManager bool, graceDays int, dom string) error {
-	return r.exec(ctx, "sp_hire_form_setting_save", m.ActorID, tenantID, string(recipients), ccManager, graceDays, nullStr(dom), nullStr(m.IP))
+func (r SelectionRepo) HireFormSettingSave(ctx context.Context, m ports.Meta, tenantID uint64, in ports.HireFormSettingInput) error {
+	j := func(v []string) string {
+		if v == nil {
+			v = []string{}
+		}
+		b, _ := json.Marshal(v)
+		return string(b)
+	}
+	return r.exec(ctx, "sp_hire_form_setting_save", m.ActorID, tenantID, j(in.Support), j(in.Talent), j(in.CC), in.CCManager, in.GraceDays,
+		in.ReminderDays, nullStr(in.Domain), nullStr(m.IP))
 }
 
 func (r SelectionRepo) HireFormStyle(ctx context.Context, tenantID uint64) (json.RawMessage, error) {

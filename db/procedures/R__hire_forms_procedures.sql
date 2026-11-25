@@ -13,9 +13,9 @@ BEGIN
   CALL sp_assert_actor(p_actor_id, p_tenant_id, 'hire.write');
   SET v_status = (SELECT status FROM hire_request WHERE tenant_id = p_tenant_id AND uuid = p_request_uuid);
   IF v_status IS NULL THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:NOT_FOUND'; END IF;
-  CALL sp_hire_assert_assignee(p_actor_id, p_tenant_id, p_request_uuid, 'IN_PROGRESS');
+  CALL sp_hire_assert_assignee(p_actor_id, p_tenant_id, p_request_uuid, 'IN_PROGRESS,COMPLETED');
   UPDATE hire_request SET draft = p_draft, draft_pay_enc = IFNULL(p_pay_enc, draft_pay_enc), draft_at = NOW(3), draft_by = p_actor_id,
-         status = 'IN_PROGRESS', assigned_user_id = IFNULL(assigned_user_id, p_actor_id), taken_at = IFNULL(taken_at, NOW(3))
+         status = IF(status = 'PENDING', 'IN_PROGRESS', status), assigned_user_id = IFNULL(assigned_user_id, p_actor_id), taken_at = IFNULL(taken_at, NOW(3))
    WHERE tenant_id = p_tenant_id AND uuid = p_request_uuid;
   CALL sp_audit_insert(p_tenant_id, p_actor_id, NULL, 'DRAFT', 'hire_request', p_request_uuid, NULL, p_ip);
 END $$
@@ -63,7 +63,7 @@ BEGIN
   DECLARE v_old_start DATE;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN ROLLBACK; RESIGNAL; END;
   CALL sp_assert_actor(p_actor_id, p_tenant_id, 'hire.write');
-  CALL sp_hire_assert_assignee(p_actor_id, p_tenant_id, p_request_uuid, 'COMPLETED');
+  CALL sp_hire_assert_assignee(p_actor_id, p_tenant_id, p_request_uuid, 'IN_PROGRESS,COMPLETED');
   IF TRIM(IFNULL(p_position, '')) = '' OR TRIM(IFNULL(p_schedule, '')) = '' OR p_start IS NULL
      OR (p_end IS NOT NULL AND p_end < p_start) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:VALIDATION';
@@ -87,6 +87,8 @@ BEGIN
          currency_item_id = v_currency, pay_enc = IFNULL(p_pay_enc, pay_enc), notes = NULLIF(TRIM(p_notes), ''),
          updated_at = NOW(3), updated_by = p_actor_id
    WHERE id = v_hire;
+  UPDATE hire_form_approval SET updated_at = NOW(3), updated_by = p_actor_id
+   WHERE hire_request_id = (SELECT hire_request_id FROM hire WHERE id = v_hire) AND form = 'FMI';
   INSERT INTO hire_change (tenant_id, hire_id, type, changes, reason, created_by)
   VALUES (p_tenant_id, v_hire, IF(v_old_start <> p_start, 'START_CHANGED', 'UPDATED'), IFNULL(p_changes, JSON_ARRAY()),
           NULLIF(TRIM(p_change_reason), ''), p_actor_id);
@@ -110,7 +112,7 @@ BEGIN
   DECLARE v_hire, v_emp BIGINT UNSIGNED;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN ROLLBACK; RESIGNAL; END;
   CALL sp_assert_actor(p_actor_id, p_tenant_id, 'hire.write');
-  CALL sp_hire_assert_assignee(p_actor_id, p_tenant_id, p_request_uuid, 'COMPLETED');
+  CALL sp_hire_assert_assignee(p_actor_id, p_tenant_id, p_request_uuid, 'IN_PROGRESS,COMPLETED');
   IF TRIM(IFNULL(p_reason, '')) = '' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:REASON_REQUIRED'; END IF;
   START TRANSACTION;
   CALL sp_hire_assert_editable(p_tenant_id, p_request_uuid, v_hire);
@@ -135,6 +137,8 @@ DROP PROCEDURE IF EXISTS sp_hire_form_setting_get $$
 CREATE PROCEDURE sp_hire_form_setting_get(IN p_tenant_id BIGINT UNSIGNED)
 BEGIN
   SELECT JSON_OBJECT('recipients', IFNULL(s.recipients, JSON_OBJECT('FMI', JSON_ARRAY(), 'EQUIPMENT', JSON_ARRAY(), 'USERS', JSON_ARRAY())),
+           'supportEmails', IFNULL(s.support_emails, JSON_ARRAY()), 'talentEmails', IFNULL(s.talent_emails, JSON_ARRAY()),
+           'ccEmails', IFNULL(s.cc_emails, JSON_ARRAY()), 'reminderDays', IFNULL(s.reminder_days, 2),
            'ccManager', IFNULL(s.cc_manager, 1) = 1, 'editGraceDays', IFNULL(s.edit_grace_days, 5),
            'corporateDomain', s.corporate_domain, 'updatedAt', s.updated_at,
            'company', IFNULL(t.legal_name, t.name), 'taxId', t.tax_id) AS doc
@@ -143,16 +147,21 @@ BEGIN
 END $$
 
 DROP PROCEDURE IF EXISTS sp_hire_form_setting_save $$
-CREATE PROCEDURE sp_hire_form_setting_save(IN p_actor_id BIGINT UNSIGNED, IN p_tenant_id BIGINT UNSIGNED, IN p_recipients JSON,
-  IN p_cc_manager TINYINT, IN p_grace INT, IN p_domain VARCHAR(120), IN p_ip VARCHAR(45))
+CREATE PROCEDURE sp_hire_form_setting_save(IN p_actor_id BIGINT UNSIGNED, IN p_tenant_id BIGINT UNSIGNED, IN p_support JSON,
+  IN p_talent JSON, IN p_cc JSON, IN p_cc_manager TINYINT, IN p_grace INT, IN p_reminder_days INT, IN p_domain VARCHAR(120), IN p_ip VARCHAR(45))
 BEGIN
   CALL sp_assert_actor(p_actor_id, p_tenant_id, 'hire.settings');
-  IF p_grace IS NULL OR p_grace < 0 OR p_grace > 60 OR JSON_TYPE(p_recipients) <> 'OBJECT' THEN
+  IF p_grace IS NULL OR p_grace < 0 OR p_grace > 60 OR p_reminder_days NOT IN (2, 3)
+     OR JSON_TYPE(p_support) <> 'ARRAY' OR JSON_TYPE(p_talent) <> 'ARRAY' OR JSON_TYPE(p_cc) <> 'ARRAY' THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:VALIDATION';
   END IF;
-  INSERT INTO hire_form_setting (tenant_id, recipients, cc_manager, edit_grace_days, corporate_domain, updated_by)
-  VALUES (p_tenant_id, p_recipients, IFNULL(p_cc_manager, 1), p_grace, NULLIF(TRIM(p_domain), ''), p_actor_id)
-  ON DUPLICATE KEY UPDATE recipients = p_recipients, cc_manager = IFNULL(p_cc_manager, 1), edit_grace_days = p_grace,
+  INSERT INTO hire_form_setting (tenant_id, recipients, support_emails, talent_emails, cc_emails, cc_manager, edit_grace_days,
+                                 reminder_days, corporate_domain, updated_by)
+  VALUES (p_tenant_id, JSON_OBJECT('FMI', p_talent, 'USERS', p_support, 'EQUIPMENT', p_support), p_support, p_talent, p_cc,
+          IFNULL(p_cc_manager, 1), p_grace, p_reminder_days, NULLIF(TRIM(p_domain), ''), p_actor_id)
+  ON DUPLICATE KEY UPDATE recipients = JSON_OBJECT('FMI', p_talent, 'USERS', p_support, 'EQUIPMENT', p_support),
+                          support_emails = p_support, talent_emails = p_talent, cc_emails = p_cc,
+                          cc_manager = IFNULL(p_cc_manager, 1), edit_grace_days = p_grace, reminder_days = p_reminder_days,
                           corporate_domain = NULLIF(TRIM(p_domain), ''), updated_by = p_actor_id;
   CALL sp_audit_insert(p_tenant_id, p_actor_id, NULL, 'UPDATE', 'hire_form_setting', NULL, NULL, p_ip);
 END $$
@@ -162,9 +171,9 @@ DROP PROCEDURE IF EXISTS sp_hire_form_dispatch_add $$
 CREATE PROCEDURE sp_hire_form_dispatch_add(IN p_actor_id BIGINT UNSIGNED, IN p_tenant_id BIGINT UNSIGNED, IN p_request_uuid CHAR(36),
   IN p_form VARCHAR(10), IN p_reason VARCHAR(10), IN p_recipients JSON, IN p_status VARCHAR(14), IN p_error VARCHAR(500))
 BEGIN
-  INSERT INTO hire_form_dispatch (tenant_id, hire_id, form, reason, recipients, status, error, created_by)
-  SELECT p_tenant_id, h.hire_id, p_form, p_reason, IFNULL(p_recipients, JSON_ARRAY()), p_status, LEFT(p_error, 500), NULLIF(p_actor_id, 0)
-    FROM hire_request h WHERE h.tenant_id = p_tenant_id AND h.uuid = p_request_uuid AND h.hire_id IS NOT NULL;
+  INSERT INTO hire_form_dispatch (tenant_id, hire_request_id, hire_id, form, reason, recipients, status, error, created_by)
+  SELECT p_tenant_id, h.id, h.hire_id, p_form, p_reason, IFNULL(p_recipients, JSON_ARRAY()), p_status, LEFT(p_error, 500), NULLIF(p_actor_id, 0)
+    FROM hire_request h WHERE h.tenant_id = p_tenant_id AND h.uuid = p_request_uuid;
 END $$
 
 -- Enlace de lectura con BDT: BDT entrega (o retira) su llave con el token de integración del tenant.

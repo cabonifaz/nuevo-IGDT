@@ -37,6 +37,7 @@ type resendAttachment struct {
 	Filename    string `json:"filename"`
 	Content     string `json:"content"`
 	ContentType string `json:"content_type,omitempty"`
+	ContentID   string `json:"content_id,omitempty"`
 }
 
 type resendEmail struct {
@@ -45,6 +46,7 @@ type resendEmail struct {
 	Cc          []string           `json:"cc,omitempty"`
 	Subject     string             `json:"subject"`
 	Text        string             `json:"text"`
+	HTML        string             `json:"html,omitempty"`
 	Attachments []resendAttachment `json:"attachments,omitempty"`
 }
 
@@ -67,9 +69,9 @@ func (r Resend) Send(ctx context.Context, m ports.Mail) error {
 	if r.FromName != "" {
 		from = fmt.Sprintf("%s <%s>", strings.NewReplacer("<", "", ">", "", "\"", "").Replace(r.FromName), r.From)
 	}
-	body := resendEmail{From: from, To: to, Cc: cc, Subject: m.Subject, Text: m.Text}
+	body := resendEmail{From: from, To: to, Cc: cc, Subject: m.Subject, Text: m.Text, HTML: m.HTML}
 	for _, a := range m.Attachments {
-		body.Attachments = append(body.Attachments, resendAttachment{Filename: a.Name, Content: base64.StdEncoding.EncodeToString(a.Data), ContentType: a.ContentType})
+		body.Attachments = append(body.Attachments, resendAttachment{Filename: a.Name, Content: base64.StdEncoding.EncodeToString(a.Data), ContentType: a.ContentType, ContentID: a.ContentID})
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {

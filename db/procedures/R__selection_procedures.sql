@@ -134,7 +134,10 @@ END $$
 DROP PROCEDURE IF EXISTS sp_hire_request_list $$
 CREATE PROCEDURE sp_hire_request_list(IN p_actor_id BIGINT UNSIGNED, IN p_tenant_id BIGINT UNSIGNED, IN p_status VARCHAR(12))
 BEGIN
+  -- cada gestor ve las solicitudes de los clientes que gestiona y las de clientes sin gestores; el admin, todas
+  DECLARE v_admin TINYINT;
   CALL sp_assert_actor(p_actor_id, p_tenant_id, 'hire.read');
+  SET v_admin = EXISTS (SELECT 1 FROM v_user_permission WHERE user_id = p_actor_id AND code = 'hire.assign');
   SELECT JSON_OBJECT('id', h.uuid, 'status', h.status, 'candidateId', h.candidate_uuid,
            'talentId', h.talent_uuid, 'requirement', JSON_OBJECT('id', h.requirement_uuid, 'code', JSON_EXTRACT(h.doc, '$.requirement.code'),
                                       'title', JSON_EXTRACT(h.doc, '$.requirement.title')),
@@ -142,11 +145,28 @@ BEGIN
                                  'headline', h.headline, 'docType', h.doc_type_label),
            'client', JSON_OBJECT('id', h.client_uuid, 'label', h.client_label),
            'profile', JSON_OBJECT('id', h.profile_uuid, 'label', h.profile_label),
+           'managers', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('id', mu.uuid, 'role', m.role, 'nameEnc', TO_BASE64(mu.full_name_enc)))
+                                 FROM client_manager m JOIN app_user mu ON mu.id = m.user_id
+                                WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid), JSON_ARRAY()),
+           'approvals', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('form', a.form, 'at', IFNULL(a.updated_at, a.approved_at),
+                                                                'byNameEnc', TO_BASE64(IFNULL(au2.full_name_enc, au.full_name_enc))))
+                                  FROM hire_form_approval a LEFT JOIN app_user au ON au.id = a.approved_by LEFT JOIN app_user au2 ON au2.id = a.updated_by
+                                 WHERE a.hire_request_id = h.id), JSON_ARRAY()),
+           'equipmentRequired', COALESCE(h.equipment_required,
+                                IF(h.draft IS NOT NULL, IF(JSON_TYPE(JSON_EXTRACT(h.draft, '$.equipment')) = 'OBJECT', 1, 0), NULL),
+                                IF(JSON_EXTRACT(h.doc, '$.conditions.laptop') = CAST('true' AS JSON), 1, 0)) = 1,
+           'startDate', COALESCE((SELECT x.start_date FROM hire x WHERE x.id = h.hire_id),
+                                 CAST(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(h.draft, '$.hire.startDate')), '') AS DATE),
+                                 CAST(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(h.doc, '$.conditions.startDate')), 'null') AS DATE)),
+           'canAct', v_admin = 1 OR NOT EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid)
+                     OR EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid AND m.user_id = p_actor_id),
            'confirmedAt', h.confirmed_at, 'receivedAt', h.received_at, 'takenAt', h.taken_at, 'cancelledAt', h.cancelled_at,
            'completedAt', h.completed_at, 'revokedAt', h.revoked_at, 'hasDraft', h.draft IS NOT NULL, 'assignedNameEnc', TO_BASE64(u.full_name_enc), 'mine', h.assigned_user_id <=> p_actor_id) AS doc
     FROM hire_request h
     LEFT JOIN app_user u ON u.id = h.assigned_user_id
    WHERE h.tenant_id = p_tenant_id AND (p_status IS NULL OR h.status = p_status)
+     AND (v_admin = 1 OR NOT EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid)
+          OR EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid AND m.user_id = p_actor_id))
    ORDER BY FIELD(h.status, 'PENDING', 'IN_PROGRESS', 'CANCELLED', 'COMPLETED', 'REVOKED'), h.received_at DESC
    LIMIT 1000;
 END $$
@@ -155,7 +175,9 @@ END $$
 DROP PROCEDURE IF EXISTS sp_hire_request_get $$
 CREATE PROCEDURE sp_hire_request_get(IN p_actor_id BIGINT UNSIGNED, IN p_tenant_id BIGINT UNSIGNED, IN p_uuid CHAR(36), IN p_ip VARCHAR(45))
 BEGIN
+  DECLARE v_admin TINYINT;
   CALL sp_assert_actor(p_actor_id, p_tenant_id, 'hire.read');
+  SET v_admin = EXISTS (SELECT 1 FROM v_user_permission WHERE user_id = p_actor_id AND code = 'hire.assign');
   IF NOT EXISTS (SELECT 1 FROM hire_request WHERE tenant_id = p_tenant_id AND uuid = p_uuid) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:NOT_FOUND';
   END IF;
@@ -169,7 +191,25 @@ BEGIN
            'client', JSON_OBJECT('id', h.client_uuid, 'label', h.client_label),
            'profile', JSON_OBJECT('id', h.profile_uuid, 'label', h.profile_label),
            'vacancy', JSON_EXTRACT(h.doc, '$.vacancy'), 'conditions', JSON_EXTRACT(h.doc, '$.conditions'),
-           'confirmedBy', JSON_EXTRACT(h.doc, '$.confirmedBy'),
+           'confirmedBy', JSON_EXTRACT(h.doc, '$.confirmedBy'), 'requesters', IFNULL(JSON_EXTRACT(h.doc, '$.requesters'), JSON_ARRAY()),
+           'managers', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('id', mu.uuid, 'role', m.role, 'nameEnc', TO_BASE64(mu.full_name_enc)))
+                                 FROM client_manager m JOIN app_user mu ON mu.id = m.user_id
+                                WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid), JSON_ARRAY()),
+           'approvals', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('form', a.form, 'at', IFNULL(a.updated_at, a.approved_at),
+                                                                'byNameEnc', TO_BASE64(IFNULL(au2.full_name_enc, au.full_name_enc))))
+                                  FROM hire_form_approval a LEFT JOIN app_user au ON au.id = a.approved_by LEFT JOIN app_user au2 ON au2.id = a.updated_by
+                                 WHERE a.hire_request_id = h.id), JSON_ARRAY()),
+           'equipmentRequired', COALESCE(h.equipment_required,
+                                IF(h.draft IS NOT NULL, IF(JSON_TYPE(JSON_EXTRACT(h.draft, '$.equipment')) = 'OBJECT', 1, 0), NULL),
+                                IF(JSON_EXTRACT(h.doc, '$.conditions.laptop') = CAST('true' AS JSON), 1, 0)) = 1,
+           'startDate', COALESCE((SELECT x.start_date FROM hire x WHERE x.id = h.hire_id),
+                                 CAST(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(h.draft, '$.hire.startDate')), '') AS DATE),
+                                 CAST(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(h.doc, '$.conditions.startDate')), 'null') AS DATE)),
+           'canAct', v_admin = 1 OR NOT EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid)
+                     OR EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid AND m.user_id = p_actor_id),
+           'dispatches', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('form', d.form, 'reason', d.reason, 'recipients', d.recipients,
+                                                                  'status', d.status, 'error', d.error, 'at', d.created_at))
+                                   FROM (SELECT * FROM hire_form_dispatch WHERE hire_request_id = h.id ORDER BY id DESC LIMIT 60) d), JSON_ARRAY()),
            'confirmedAt', h.confirmed_at, 'receivedAt', h.received_at, 'takenAt', h.taken_at, 'cancelledAt', h.cancelled_at,
            'completedAt', h.completed_at, 'revokedAt', h.revoked_at, 'assignedNameEnc', TO_BASE64(u.full_name_enc),
            'mine', h.assigned_user_id <=> p_actor_id) AS doc

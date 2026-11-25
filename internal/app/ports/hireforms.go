@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/url"
+	"time"
 )
 
 // HireUpdate: corrección del ingreso confirmado. PayEnc nil = la remuneración no cambia.
@@ -22,7 +23,16 @@ type HireFormsRepository interface {
 	HireUpdate(ctx context.Context, m Meta, tenantID uint64, in HireUpdate) error
 	HireRevoke(ctx context.Context, m Meta, tenantID uint64, requestID, reason string) error
 	HireFormSetting(ctx context.Context, tenantID uint64) (json.RawMessage, error)
-	HireFormSettingSave(ctx context.Context, m Meta, tenantID uint64, recipients json.RawMessage, ccManager bool, graceDays int, domain string) error
+	HireFormSettingSave(ctx context.Context, m Meta, tenantID uint64, in HireFormSettingInput) error
+	HireFormApprove(ctx context.Context, m Meta, tenantID uint64, requestID, form string, data json.RawMessage, equipmentRequired *bool) (completed, first bool, err error)
+	HireEquipmentRequired(ctx context.Context, m Meta, tenantID uint64, requestID string, required bool) error
+	HireApprovals(ctx context.Context, m Meta, tenantID uint64, requestID string) ([]json.RawMessage, error)
+	ClientManagers(ctx context.Context, m Meta, tenantID uint64) ([]json.RawMessage, error)
+	ClientManagersSet(ctx context.Context, m Meta, tenantID uint64, clientID, primaryID, secondaryID string) error
+	ClientManagerCandidates(ctx context.Context, m Meta, tenantID uint64) ([]json.RawMessage, error)
+	HireReminderTenants(ctx context.Context) ([]ReminderTenant, error)
+	HireReminderClaim(ctx context.Context, tenantID uint64, kind string, today time.Time, every int) (bool, error)
+	HirePending(ctx context.Context, tenantID uint64) (requests, admins []json.RawMessage, err error)
 	HireFormStyle(ctx context.Context, tenantID uint64) (json.RawMessage, error)
 	HireFormStyleSave(ctx context.Context, m Meta, tenantID uint64, style json.RawMessage, clearLogo bool) error
 	HireFormLogoSet(ctx context.Context, m Meta, tenantID uint64, fileUUID string) error
@@ -112,12 +122,14 @@ type FormRenderer interface {
 type MailAttachment struct {
 	Name, ContentType string
 	Data              []byte
+	ContentID         string // imagen incrustada en el HTML (src="cid:...")
 }
 
 type Mail struct {
 	To, Cc      []string
 	Subject     string
 	Text        string
+	HTML        string // cuerpo HTML (opcional; Text queda como alternativa)
 	Attachments []MailAttachment
 }
 
@@ -147,4 +159,21 @@ type CatalogLabel struct {
 
 type CatalogLabeler interface {
 	CatalogLabels(ctx context.Context, tenantID uint64, ids []string) (map[string]CatalogLabel, error)
+}
+
+// HireFormSettingInput: destinatarios por grupo, copia al aprobador, días de gracia, recordatorio y dominio corporativo.
+type HireFormSettingInput struct {
+	Support, Talent, CC []string
+	CCManager           bool
+	GraceDays           int
+	ReminderDays        int
+	Domain              string
+}
+
+// ReminderTenant: tenant con la bandeja de selección activa y cada cuántos días recibe el correo de pendientes.
+type ReminderTenant struct {
+	ID           uint64
+	Slug         string
+	Company      string
+	ReminderDays int
 }
