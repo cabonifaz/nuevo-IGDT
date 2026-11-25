@@ -156,8 +156,8 @@ BEGIN
                                 IF(h.draft IS NOT NULL, IF(JSON_TYPE(JSON_EXTRACT(h.draft, '$.equipment')) = 'OBJECT', 1, 0), NULL),
                                 IF(JSON_EXTRACT(h.doc, '$.conditions.laptop') = CAST('true' AS JSON), 1, 0)) = 1,
            'startDate', COALESCE((SELECT x.start_date FROM hire x WHERE x.id = h.hire_id),
-                                 CAST(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(h.draft, '$.hire.startDate')), '') AS DATE),
-                                 CAST(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(h.doc, '$.conditions.startDate')), 'null') AS DATE)),
+                                 STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(h.draft, '$.hire.startDate')), '%Y-%m-%d'),
+                                 STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(h.doc, '$.conditions.startDate')), '%Y-%m-%d')),
            'canAct', v_admin = 1 OR NOT EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid)
                      OR EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid AND m.user_id = p_actor_id),
            'confirmedAt', h.confirmed_at, 'receivedAt', h.received_at, 'takenAt', h.taken_at, 'cancelledAt', h.cancelled_at,
@@ -203,8 +203,8 @@ BEGIN
                                 IF(h.draft IS NOT NULL, IF(JSON_TYPE(JSON_EXTRACT(h.draft, '$.equipment')) = 'OBJECT', 1, 0), NULL),
                                 IF(JSON_EXTRACT(h.doc, '$.conditions.laptop') = CAST('true' AS JSON), 1, 0)) = 1,
            'startDate', COALESCE((SELECT x.start_date FROM hire x WHERE x.id = h.hire_id),
-                                 CAST(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(h.draft, '$.hire.startDate')), '') AS DATE),
-                                 CAST(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(h.doc, '$.conditions.startDate')), 'null') AS DATE)),
+                                 STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(h.draft, '$.hire.startDate')), '%Y-%m-%d'),
+                                 STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(h.doc, '$.conditions.startDate')), '%Y-%m-%d')),
            'canAct', v_admin = 1 OR NOT EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid)
                      OR EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid AND m.user_id = p_actor_id),
            'dispatches', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('form', d.form, 'reason', d.reason, 'recipients', d.recipients,
