@@ -180,6 +180,10 @@ BEGIN
                         AND (v_admin = 1 OR h.directed_user_id <=> p_actor_id
                              OR NOT EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = x.tenant_id AND m.client_uuid = x.client_uuid)
                              OR EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = x.tenant_id AND m.client_uuid = x.client_uuid AND m.user_id = p_actor_id)),
+           'canResend', EXISTS (SELECT 1 FROM v_user_permission WHERE user_id = p_actor_id AND code = 'hire.write')
+                        AND (v_admin = 1 OR h.directed_user_id <=> p_actor_id
+                             OR NOT EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = x.tenant_id AND m.client_uuid = x.client_uuid)
+                             OR EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = x.tenant_id AND m.client_uuid = x.client_uuid AND m.user_id = p_actor_id)),
            'users', x.user_request, 'equipmentRequest', x.equipment_request,
            'operations', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('id', o.uuid, 'type', o.type, 'status', o.status, 'effectiveDate', o.effective_date,
                                          'data', o.data, 'reason', o.reason, 'at', o.created_at, 'byNameEnc', TO_BASE64(ou.full_name_enc),
