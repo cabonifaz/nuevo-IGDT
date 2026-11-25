@@ -303,11 +303,18 @@ func (s *SelectionService) ResendForms(ctx context.Context, p *domain.Principal,
 	if err := s.Repo.HireAssertAssignee(ctx, meta(p, ""), tid, requestID, "IN_PROGRESS,COMPLETED"); err != nil {
 		return err
 	}
-	h, err := s.formsOfHire(ctx, p, tid, requestID)
+	// reenvía las fichas aprobadas (todas o las indicadas); alguna debe estar aprobada
+	approved, err := s.approvedForms(ctx, p, tid, requestID)
 	if err != nil {
 		return err
 	}
-	if h == nil {
+	ok := false
+	for _, f := range FormCodes {
+		if approved[f] != nil && (len(forms) == 0 || contains(forms, f)) {
+			ok = true
+		}
+	}
+	if !ok {
 		return domain.NewError("HIRE_STATE")
 	}
 	s.dispatchAsync(p, tid, requestID, "RESENT", forms)

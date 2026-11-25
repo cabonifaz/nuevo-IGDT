@@ -148,7 +148,7 @@ BEGIN
            'managers', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('id', mu.uuid, 'role', m.role, 'nameEnc', TO_BASE64(mu.full_name_enc)))
                                  FROM client_manager m JOIN app_user mu ON mu.id = m.user_id
                                 WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid), JSON_ARRAY()),
-           'approvals', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('form', a.form, 'at', IFNULL(a.updated_at, a.approved_at),
+           'approvals', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('form', a.form, 'at', IFNULL(a.updated_at, a.approved_at), 'approvedAt', a.approved_at, 'updatedAt', a.updated_at,
                                                                 'byNameEnc', TO_BASE64(IFNULL(au2.full_name_enc, au.full_name_enc))))
                                   FROM hire_form_approval a LEFT JOIN app_user au ON au.id = a.approved_by LEFT JOIN app_user au2 ON au2.id = a.updated_by
                                  WHERE a.hire_request_id = h.id), JSON_ARRAY()),
@@ -195,7 +195,7 @@ BEGIN
            'managers', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('id', mu.uuid, 'role', m.role, 'nameEnc', TO_BASE64(mu.full_name_enc)))
                                  FROM client_manager m JOIN app_user mu ON mu.id = m.user_id
                                 WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid), JSON_ARRAY()),
-           'approvals', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('form', a.form, 'at', IFNULL(a.updated_at, a.approved_at),
+           'approvals', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('form', a.form, 'at', IFNULL(a.updated_at, a.approved_at), 'approvedAt', a.approved_at, 'updatedAt', a.updated_at,
                                                                 'byNameEnc', TO_BASE64(IFNULL(au2.full_name_enc, au.full_name_enc))))
                                   FROM hire_form_approval a LEFT JOIN app_user au ON au.id = a.approved_by LEFT JOIN app_user au2 ON au2.id = a.updated_by
                                  WHERE a.hire_request_id = h.id), JSON_ARRAY()),

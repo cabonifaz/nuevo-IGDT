@@ -539,10 +539,10 @@ func (s *SelectionService) Hire(ctx context.Context, p *domain.Principal, ip, id
 		return nil, err
 	}
 	m["formSettings"] = map[string]any{"corporateDomain": st.CorporateDomain, "editGraceDays": st.EditGraceDays,
-		"recipients": map[string]int{"FMI": len(st.Recipients["FMI"]), "EQUIPMENT": len(st.Recipients["EQUIPMENT"]), "USERS": len(st.Recipients["USERS"])},
+		"recipients": map[string]int{"FMI": len(st.TalentEmails), "EQUIPMENT": len(st.SupportEmails), "USERS": len(st.SupportEmails)},
 		"mailer":     s.Mail != nil && mailerEnabled(s.Mail)}
-	switch m["status"] {
-	case "COMPLETED", "REVOKED":
+	// el ingreso registrado (FMI aprobada), aunque falten otras fichas; y el borrador mientras la solicitud está abierta
+	{
 		hire, err := s.hireOf(ctx, p, tid, id)
 		if err != nil {
 			return nil, err
@@ -556,7 +556,11 @@ func (s *SelectionService) Hire(ctx context.Context, p *domain.Principal, ip, id
 				hire["forms"] = f
 			}
 		}
-		m["hire"] = hire
+		if hire != nil {
+			m["hire"] = hire
+		}
+	}
+	switch m["status"] {
 	case "PENDING", "IN_PROGRESS":
 		f, d, err := s.draftOf(ctx, p, tid, id, p.Has("employee.salary.read"))
 		if err != nil {
