@@ -80,6 +80,10 @@ BEGIN
     x.user_request = IFNULL((SELECT JSON_EXTRACT(a.data, '$.users') FROM hire_form_approval a WHERE a.hire_request_id = v_req AND a.form = 'USERS'), x.user_request),
     x.equipment_request = IFNULL((SELECT JSON_EXTRACT(a.data, '$.equipment') FROM hire_form_approval a WHERE a.hire_request_id = v_req AND a.form = 'EQUIPMENT'), x.equipment_request)
    WHERE x.id = v_hire;
+  -- equipo entregado según la ficha de equipo aprobada; un cambio de RQ pendiente del colaborador queda completado
+  CALL sp_employee_equipment_sync(v_hire, p_actor_id);
+  UPDATE hire_contract_op o JOIN hire px ON px.id = o.hire_id SET o.status = 'COMPLETED'
+   WHERE px.employee_id = v_emp AND px.id <> v_hire AND o.type = 'RQ_CHANGE' AND o.status = 'REQUESTED';
   CALL sp_hire_recompute(v_req);
   INSERT INTO hire_event (tenant_id, type, candidate_uuid, requirement_uuid, data)
   SELECT p_tenant_id, 'HIRED', h.candidate_uuid, h.requirement_uuid,
@@ -115,6 +119,9 @@ BEGIN
            'updatedAt', x.updated_at, 'updatedByNameEnc', TO_BASE64(uu.full_name_enc),
            'signerId', IFNULL(uu.uuid, u.uuid), 'signerNameEnc', TO_BASE64(IFNULL(uu.full_name_enc, u.full_name_enc)),
            'status', x.status, 'revokedAt', x.revoked_at, 'revokeReason', x.revoke_reason, 'revokedByNameEnc', TO_BASE64(ur.full_name_enc),
+           'client', JSON_OBJECT('id', x.client_uuid, 'label', x.client_label), 'terminationDate', x.termination_date,
+           'terminationReason', (SELECT JSON_UNQUOTE(JSON_EXTRACT(tr.label_i18n, '$.es')) FROM master_item tr WHERE tr.id = x.termination_reason_item_id),
+           'equipmentReturnDate', x.equipment_return_date, 'closedAt', x.closed_at,
            'editableUntil', DATE_ADD(x.start_date, INTERVAL IFNULL(st.edit_grace_days, 5) DAY),
            'editable', x.status = 'ACTIVE' AND UTC_DATE() <= DATE_ADD(x.start_date, INTERVAL IFNULL(st.edit_grace_days, 5) DAY),
            'changes', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('type', hc.type, 'changes', hc.changes, 'reason', hc.reason,
@@ -122,7 +129,8 @@ BEGIN
                                 FROM (SELECT * FROM hire_change WHERE hire_id = x.id ORDER BY id DESC LIMIT 100) hc
                                 LEFT JOIN app_user cu2 ON cu2.id = hc.created_by), JSON_ARRAY()),
            'dispatches', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('form', d.form, 'reason', d.reason, 'recipients', d.recipients,
-                                                                  'status', d.status, 'error', d.error, 'at', d.created_at))
+                                                                  'status', d.status, 'error', d.error, 'at', d.created_at,
+                                                                  'operation', (SELECT o.type FROM hire_contract_op o WHERE o.id = d.contract_op_id)))
                                    FROM (SELECT * FROM hire_form_dispatch WHERE hire_request_id = x.hire_request_id ORDER BY id DESC LIMIT 60) d), JSON_ARRAY())) AS doc
     FROM hire_request h
     JOIN hire x ON x.id = h.hire_id
@@ -139,17 +147,29 @@ BEGIN
    WHERE h.tenant_id = p_tenant_id AND h.uuid = p_request_uuid;
 END $$
 
--- Colaboradores con su último ingreso.
+-- Colaboradores con su último ingreso, el estado del contrato (fin, cese y la última operación de fin de contrato) y si
+-- el usuario puede gestionar su fin de contrato.
 DROP PROCEDURE IF EXISTS sp_employee_list $$
 CREATE PROCEDURE sp_employee_list(IN p_actor_id BIGINT UNSIGNED, IN p_tenant_id BIGINT UNSIGNED)
 BEGIN
+  DECLARE v_admin, v_write TINYINT;
   CALL sp_assert_actor(p_actor_id, p_tenant_id, 'employee.read');
+  SET v_admin = EXISTS (SELECT 1 FROM v_user_permission WHERE user_id = p_actor_id AND code = 'hire.assign');
+  SET v_write = EXISTS (SELECT 1 FROM v_user_permission WHERE user_id = p_actor_id AND code = 'hire.write');
   SELECT JSON_OBJECT('id', e.uuid, 'talentId', e.talent_uuid, 'firstName', e.first_name, 'lastName', e.last_name,
            'secondLastName', e.second_last_name, 'docType', e.doc_type_label, 'status', e.status,
            'hire', JSON_OBJECT('id', x.uuid, 'requestId', h.uuid, 'client', x.client_label, 'position', x.position,
                                'contract', JSON_UNQUOTE(JSON_EXTRACT(c.label_i18n, '$.es')),
                                'area', JSON_UNQUOTE(JSON_EXTRACT(a.label_i18n, '$.es')),
-                               'startDate', x.start_date, 'endDate', x.end_date)) AS doc
+                               'startDate', x.start_date, 'endDate', x.end_date, 'status', x.status,
+                               'terminationDate', x.termination_date,
+                               'lastOperation', (SELECT JSON_OBJECT('id', o.uuid, 'type', o.type, 'status', o.status, 'effectiveDate', o.effective_date, 'at', o.created_at)
+                                                   FROM hire_contract_op o WHERE o.hire_id = x.id ORDER BY o.id DESC LIMIT 1),
+                               'pendingEquipment', (SELECT COUNT(*) FROM employee_equipment q WHERE q.employee_id = e.id AND q.status = 'PENDING_RETURN'),
+                               'canManage', x.status = 'ACTIVE' AND v_write = 1
+                                            AND (v_admin = 1 OR h.directed_user_id <=> p_actor_id
+                                                 OR NOT EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = x.tenant_id AND m.client_uuid = x.client_uuid)
+                                                 OR EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = x.tenant_id AND m.client_uuid = x.client_uuid AND m.user_id = p_actor_id)))) AS doc
     FROM employee e
     JOIN hire x ON x.id = (SELECT MAX(x2.id) FROM hire x2 WHERE x2.employee_id = e.id)
     JOIN hire_request h ON h.id = x.hire_request_id

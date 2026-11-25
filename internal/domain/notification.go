@@ -17,10 +17,11 @@ const (
 	NotifHireRequest      = "HIRE_REQUEST"      // a los gestores: Selección confirmó un candidato en BDT
 	NotifHireCancelled    = "HIRE_CANCELLED"    // a los gestores: Selección retiró la confirmación
 	NotifHirePending      = "HIRE_PENDING"      // a cada gestor, a diario: sus solicitudes de ingreso pendientes, por vencer y vencidas
+	NotifContractEnding   = "CONTRACT_ENDING"   // a cada gestor, a diario: contratos de sus colaboradores por terminar (renovar, baja, traspaso o cambio de RQ)
 )
 
 // NotificationTypes: tipos que el usuario puede configurar (en la app y push).
-var NotificationTypes = []string{NotifSupportNew, NotifSupportReply, NotifReleaseNote, NotifFeatureNew, NotifFeatureEnabled, NotifVersionPublished, NotifHireRequest, NotifHireCancelled, NotifHirePending}
+var NotificationTypes = []string{NotifSupportNew, NotifSupportReply, NotifReleaseNote, NotifFeatureNew, NotifFeatureEnabled, NotifVersionPublished, NotifHireRequest, NotifHireCancelled, NotifHirePending, NotifContractEnding}
 
 func ValidNotificationType(t string) bool { return slices.Contains(NotificationTypes, t) }
 

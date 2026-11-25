@@ -898,7 +898,7 @@
     "/hires/events": {
       "get": {
         "summary": "Ingresos registrados (para BDT)",
-        "description": "Requiere hires.read. Eventos desde el cursor ?since=: HIRED (el gestor confirmó las fichas y registró el ingreso), START_CHANGED (cambió la fecha de inicio: startDate, previousStartDate, reason) y REVOKED (el cliente anuló el ingreso: reason). BDT marca al candidato como ingresado, actualiza su fecha de inicio o deja la vacante sin cubrir. Respuesta: events, next (cursor para la próxima llamada) y more.",
+        "description": "Requiere hires.read. Eventos desde el cursor ?since=: HIRED (el gestor confirmó las fichas y registró el ingreso), START_CHANGED (cambió la fecha de inicio: startDate, previousStartDate, reason) y REVOKED (el cliente anuló el ingreso: reason). Fin de contrato (v0.13): RENEWED (se renovó: endDate, previousEndDate, reason), TERMINATED (baja: terminationDate, reason {id, code, label} de TERMINATION_REASON, recoverEquipment, equipmentReturnDate), TRANSFERRED (traspaso a otro cliente: date, client {id, label}, previousClient, position, endDate, previousEndDate) y RQ_CHANGE_REQUESTED (el talento pasa a otro RQ abierto: requirementId = el RQ destino, requirementCode, requirementTitle, client, date, fromRequirementId = el RQ del contrato que se cierra; Selección debe gestionar el ingreso en BDT). Todos llevan hireId, employeeId, talentId y operationId; los campos nulos se omiten. Ignorar los tipos que no se conozcan. BDT marca al candidato como ingresado, actualiza su fecha de inicio o deja la vacante sin cubrir. Respuesta: events, next (cursor para la próxima llamada) y more.",
         "parameters": [
           {
             "name": "since",
@@ -934,7 +934,13 @@
                           "type": {
                             "type": "string",
                             "enum": [
-                              "HIRED"
+                              "HIRED",
+                              "START_CHANGED",
+                              "REVOKED",
+                              "RENEWED",
+                              "TERMINATED",
+                              "TRANSFERRED",
+                              "RQ_CHANGE_REQUESTED"
                             ]
                           },
                           "candidateId": {

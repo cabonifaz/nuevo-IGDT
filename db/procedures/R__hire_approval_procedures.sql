@@ -66,6 +66,7 @@ BEGIN
   IF v_hire IS NOT NULL THEN
     IF p_form = 'USERS' THEN UPDATE hire SET user_request = JSON_EXTRACT(p_data, '$.users') WHERE id = v_hire; END IF;
     IF p_form = 'EQUIPMENT' THEN UPDATE hire SET equipment_request = JSON_EXTRACT(p_data, '$.equipment') WHERE id = v_hire; END IF;
+    IF p_form = 'EQUIPMENT' THEN CALL sp_employee_equipment_sync(v_hire, p_actor_id); END IF;
   END IF;
   UPDATE hire_request SET equipment_required = IFNULL(p_equipment_required, equipment_required),
          status = IF(status = 'PENDING', 'IN_PROGRESS', status),

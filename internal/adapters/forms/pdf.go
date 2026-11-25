@@ -339,6 +339,11 @@ func (c *doc) fmi(f ports.FMIPrint) {
 	}
 	labW := width * 0.30
 	colW := (width - labW) / 4
+	// documentos de fin de contrato (movimiento o cese llenos): filas y espacios más compactos para que quepan en una hoja
+	rowMin, gap, secH := 6.5, 2.5, 6.5
+	if f.Compact {
+		rowMin, gap, secH = 5.6, 1.2, 5.6
+	}
 	bo := cellOpt{border: c.st.Border, lineW: 0.15}
 	lab := bo
 	lab.fill = c.st.LabelBg
@@ -346,11 +351,14 @@ func (c *doc) fmi(f ports.FMIPrint) {
 	val.color = black
 	section := func(title string) {
 		y = c.room(y, 16)
-		c.cell(side, y, width, 6.5, strings.ToUpper(title), cellOpt{bold: true, size: 9, color: ink})
-		y += 6.5
+		c.cell(side, y, width, secH, strings.ToUpper(title), cellOpt{bold: true, size: 9, color: ink})
+		y += secH
 	}
 	row := func(label, value string) {
-		h := c.height(value, width-labW, val, 6.5)
+		h := c.height(value, width-labW, val, rowMin)
+		if f.Compact && h > rowMin { // menos relleno vertical
+			h = max(rowMin, h-1)
+		}
 		y = c.room(y, h)
 		c.cell(side, y, labW, h, label, lab)
 		c.cell(side+labW, y, width-labW, h, value, val)
@@ -387,7 +395,7 @@ func (c *doc) fmi(f ports.FMIPrint) {
 	section("Datos del colaborador")
 	row("Nombres y Apellidos", f.Name)
 	row("Cliente", f.Client)
-	y += 2.5
+	y += gap
 	section("Ingreso")
 	row("Modalidad", f.Modality)
 	row("Motivo de Ingreso", f.Reason)
@@ -401,22 +409,36 @@ func (c *doc) fmi(f ports.FMIPrint) {
 	if f.Notes != "" {
 		row("Observaciones", f.Notes)
 	}
-	y += 2.5
+	y += gap
 	section("Declaración en SUNAT (*)")
 	row("[1] ¿Declarado en SUNAT?", f.Sunat)
 	row("[2] Sede a declarar", f.Site)
-	y += 2.5
+	y += gap
 	section("Movimiento")
 	pay("Cambio de estructura salarial", "", "", "", false, false, false, false)
-	row("Cambio de puesto", "")
-	row("Cambio de área", "")
-	row("Cambio de jornada", "")
-	row("F. Inicio de movimiento", "")
-	y += 2.5
+	if f.MoveClient != "" { // traspaso a otro cliente (no está en el formato original: solo se imprime si aplica)
+		row("Cambio de cliente", f.MoveClient)
+	}
+	row("Cambio de puesto", f.MovePosition)
+	row("Cambio de área", f.MoveArea)
+	row("Cambio de jornada", f.MoveSchedule)
+	row("F. Inicio de movimiento", f.MoveDate)
+	y += gap
 	section("Cese")
-	row("Motivo de Cese", "")
-	row("Fecha de Cese", "")
-	row("Fecha de devolución Equipo", "")
+	row("Motivo de Cese", f.TermReason)
+	row("Fecha de Cese", f.TermDate)
+	row("Fecha de devolución Equipo", f.ReturnDate)
+	if f.Recover != "" { // indicación destacada para Soporte: recuperar la laptop o el equipo entregado
+		alert := val
+		alert.bold, alert.color, alert.fill = true, "#B42318", "#FEF3F2"
+		h := c.height(f.Recover, width-labW, alert, rowMin)
+		y = c.room(y, h)
+		al := lab
+		al.bold, al.color = true, "#B42318"
+		c.cell(side, y, labW, h, "Recuperar laptop/equipo", al)
+		c.cell(side+labW, y, width-labW, h, f.Recover, alert)
+		y += h
+	}
 	c.signature(sunatNote, false)
 }
 
@@ -646,34 +668,35 @@ func (c *doc) users(u ports.UsersPrint) {
 		y += nh
 	}
 	y += gap
-	// modificación (en blanco)
+	// modificación (en blanco salvo en una solicitud de modificación)
 	y = c.bar(side, y, width, "Modificación de usuarios", 9, grayLine)
 	m1, m2 := width*0.33, width*0.50
 	m3 := width - m1 - m2
 	mods := []struct {
-		l   string
-		box bool
-	}{{"Modificar Usuario de Red", true}, {"Usuario:", false}, {"Modificar por:", false},
-		{"Modificar correo electrónico:", true}, {"Correo:", false}, {"Modificar por:", false}}
+		l, v string
+		box  bool
+		on   bool
+	}{{"Modificar Usuario de Red", "", true, u.ModUserOn}, {"Usuario:", u.ModUser, false, false}, {"Modificar por:", u.ModUserTo, false, false},
+		{"Modificar correo electrónico:", "", true, u.ModEmailOn}, {"Correo:", u.ModEmail, false, false}, {"Modificar por:", u.ModEmailTo, false, false}}
 	c.cell(side+m1+m2, y, m3, float64(len(mods))*r, "", g)
 	for _, m := range mods {
 		c.cell(side, y, m1, r, m.l, lab)
-		c.cell(side+m1, y, m2, r, "", g)
+		c.cell(side+m1, y, m2, r, m.v, g)
 		if m.box {
-			c.check(side+m1+padX, y+(r-3.5)/2, "", false, false, 9)
+			c.check(side+m1+padX, y+(r-3.5)/2, "", m.on, false, 9)
 		}
 		y += r
 	}
 	y += gap
-	// desactivación (en blanco)
+	// desactivación (en blanco salvo en una solicitud de baja de credenciales)
 	y = c.bar(side, y, width, "Desactivación de usuarios", 9, grayLine)
-	for _, l := range []string{"Nombre y Apellidos:", "Usuario:", "Correo:", "Motivo:"} {
-		h := r
-		if l == "Nombre y Apellidos:" {
+	for _, d := range [][2]string{{"Nombre y Apellidos:", u.DeactName}, {"Usuario:", u.DeactUser}, {"Correo:", u.DeactEmail}, {"Motivo:", u.DeactReason}} {
+		h := c.height(d[1], width-w1, g, r)
+		if d[0] == "Nombre y Apellidos:" && h < 8.5 {
 			h = 8.5
 		}
-		c.cell(side, y, w1, h, l, lab)
-		c.cell(side+w1, y, width-w1, h, "", g)
+		c.cell(side, y, w1, h, d[0], lab)
+		c.cell(side+w1, y, width-w1, h, d[1], g)
 		y += h
 	}
 	c.signature("", false)

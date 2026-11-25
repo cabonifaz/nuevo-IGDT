@@ -139,6 +139,7 @@ BEGIN
   SELECT JSON_OBJECT('recipients', IFNULL(s.recipients, JSON_OBJECT('FMI', JSON_ARRAY(), 'EQUIPMENT', JSON_ARRAY(), 'USERS', JSON_ARRAY())),
            'supportEmails', IFNULL(s.support_emails, JSON_ARRAY()), 'talentEmails', IFNULL(s.talent_emails, JSON_ARRAY()),
            'ccEmails', IFNULL(s.cc_emails, JSON_ARRAY()), 'reminderDays', IFNULL(s.reminder_days, 2),
+           'contractAlertDays', IFNULL(s.contract_alert_days, JSON_ARRAY(30, 15, 7)),
            'ccManager', IFNULL(s.cc_manager, 1) = 1, 'editGraceDays', IFNULL(s.edit_grace_days, 5),
            'corporateDomain', s.corporate_domain, 'updatedAt', s.updated_at,
            'company', IFNULL(t.legal_name, t.name), 'taxId', t.tax_id) AS doc
@@ -148,31 +149,34 @@ END $$
 
 DROP PROCEDURE IF EXISTS sp_hire_form_setting_save $$
 CREATE PROCEDURE sp_hire_form_setting_save(IN p_actor_id BIGINT UNSIGNED, IN p_tenant_id BIGINT UNSIGNED, IN p_support JSON,
-  IN p_talent JSON, IN p_cc JSON, IN p_cc_manager TINYINT, IN p_grace INT, IN p_reminder_days INT, IN p_domain VARCHAR(120), IN p_ip VARCHAR(45))
+  IN p_talent JSON, IN p_cc JSON, IN p_cc_manager TINYINT, IN p_grace INT, IN p_reminder_days INT, IN p_domain VARCHAR(120),
+  IN p_contract_days JSON, IN p_ip VARCHAR(45))
 BEGIN
   CALL sp_assert_actor(p_actor_id, p_tenant_id, 'hire.settings');
   IF p_grace IS NULL OR p_grace < 0 OR p_grace > 60 OR p_reminder_days NOT IN (2, 3)
-     OR JSON_TYPE(p_support) <> 'ARRAY' OR JSON_TYPE(p_talent) <> 'ARRAY' OR JSON_TYPE(p_cc) <> 'ARRAY' THEN
+     OR JSON_TYPE(p_support) <> 'ARRAY' OR JSON_TYPE(p_talent) <> 'ARRAY' OR JSON_TYPE(p_cc) <> 'ARRAY'
+     OR (p_contract_days IS NOT NULL AND (JSON_TYPE(p_contract_days) <> 'ARRAY' OR JSON_LENGTH(p_contract_days) NOT BETWEEN 1 AND 5)) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:VALIDATION';
   END IF;
   INSERT INTO hire_form_setting (tenant_id, recipients, support_emails, talent_emails, cc_emails, cc_manager, edit_grace_days,
-                                 reminder_days, corporate_domain, updated_by)
+                                 reminder_days, corporate_domain, contract_alert_days, updated_by)
   VALUES (p_tenant_id, JSON_OBJECT('FMI', p_talent, 'USERS', p_support, 'EQUIPMENT', p_support), p_support, p_talent, p_cc,
-          IFNULL(p_cc_manager, 1), p_grace, p_reminder_days, NULLIF(TRIM(p_domain), ''), p_actor_id)
+          IFNULL(p_cc_manager, 1), p_grace, p_reminder_days, NULLIF(TRIM(p_domain), ''), p_contract_days, p_actor_id)
   ON DUPLICATE KEY UPDATE recipients = JSON_OBJECT('FMI', p_talent, 'USERS', p_support, 'EQUIPMENT', p_support),
                           support_emails = p_support, talent_emails = p_talent, cc_emails = p_cc,
                           cc_manager = IFNULL(p_cc_manager, 1), edit_grace_days = p_grace, reminder_days = p_reminder_days,
-                          corporate_domain = NULLIF(TRIM(p_domain), ''), updated_by = p_actor_id;
+                          corporate_domain = NULLIF(TRIM(p_domain), ''),
+                          contract_alert_days = IFNULL(p_contract_days, contract_alert_days), updated_by = p_actor_id;
   CALL sp_audit_insert(p_tenant_id, p_actor_id, NULL, 'UPDATE', 'hire_form_setting', NULL, NULL, p_ip);
 END $$
 
 -- Registra el resultado del envío de una ficha.
 DROP PROCEDURE IF EXISTS sp_hire_form_dispatch_add $$
 CREATE PROCEDURE sp_hire_form_dispatch_add(IN p_actor_id BIGINT UNSIGNED, IN p_tenant_id BIGINT UNSIGNED, IN p_request_uuid CHAR(36),
-  IN p_form VARCHAR(10), IN p_reason VARCHAR(10), IN p_recipients JSON, IN p_status VARCHAR(14), IN p_error VARCHAR(500))
+  IN p_form VARCHAR(10), IN p_reason VARCHAR(12), IN p_recipients JSON, IN p_status VARCHAR(14), IN p_error VARCHAR(500), IN p_op_uuid CHAR(36))
 BEGIN
-  INSERT INTO hire_form_dispatch (tenant_id, hire_request_id, hire_id, form, reason, recipients, status, error, created_by)
-  SELECT p_tenant_id, h.id, h.hire_id, p_form, p_reason, IFNULL(p_recipients, JSON_ARRAY()), p_status, LEFT(p_error, 500), NULLIF(p_actor_id, 0)
+  INSERT INTO hire_form_dispatch (tenant_id, hire_request_id, hire_id, contract_op_id, form, reason, recipients, status, error, created_by)
+  SELECT p_tenant_id, h.id, h.hire_id, (SELECT o.id FROM hire_contract_op o WHERE o.uuid = p_op_uuid AND o.tenant_id = p_tenant_id), p_form, p_reason, IFNULL(p_recipients, JSON_ARRAY()), p_status, LEFT(p_error, 500), NULLIF(p_actor_id, 0)
     FROM hire_request h WHERE h.tenant_id = p_tenant_id AND h.uuid = p_request_uuid;
 END $$
 

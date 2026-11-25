@@ -58,7 +58,7 @@ func (r SelectionRepo) HireFormSettingSave(ctx context.Context, m ports.Meta, te
 		return string(b)
 	}
 	return r.exec(ctx, "sp_hire_form_setting_save", m.ActorID, tenantID, j(in.Support), j(in.Talent), j(in.CC), in.CCManager, in.GraceDays,
-		in.ReminderDays, nullStr(in.Domain), nullStr(m.IP))
+		in.ReminderDays, nullStr(in.Domain), contractDays(in.ContractDays), nullStr(m.IP))
 }
 
 func (r SelectionRepo) HireFormStyle(ctx context.Context, tenantID uint64) (json.RawMessage, error) {
@@ -78,7 +78,7 @@ func (r SelectionRepo) HireFormDispatchAdd(ctx context.Context, actorID, tenantI
 		recipients = []string{}
 	}
 	b, _ := json.Marshal(recipients)
-	return r.exec(ctx, "sp_hire_form_dispatch_add", actorID, tenantID, requestID, form, reason, string(b), status, nullStr(errText))
+	return r.exec(ctx, "sp_hire_form_dispatch_add", actorID, tenantID, requestID, form, reason, string(b), status, nullStr(errText), nil)
 }
 
 func (r SelectionRepo) BDTLinkSet(ctx context.Context, tenantID, apiKeyID uint64, keyEnc []byte) error {

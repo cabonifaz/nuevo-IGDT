@@ -3,6 +3,12 @@
 Formato: `## vMAYOR.MENOR — AAAA-MM-DD`, seguido de los cambios en viñetas (español). Al publicar una versión se
 sube `VERSION` y se agrega su sección aquí: la API la registra al desplegarse en cada ambiente y la notifica.
 
+## v0.13 — 2026-11-25
+- Fin de contrato: los contratos vigentes que terminan pronto se alertan a sus gestores (los del cliente, el gestor dirigido o, si el cliente no tiene gestores, los administradores) con niveles aviso, recordatorio, crítico y vencido según los días de aviso de la empresa (por defecto 30, 15 y 7; se configuran en Administración › Fichas de ingreso). Aparecen en la alerta destacada, en el aviso diario de las notificaciones y en el correo de recordatorio cada 2 o 3 días.
+- Asistente «Gestionar fin de contrato» desde la alerta, Colaboradores o la solicitud, con la guía de qué correos salen y a quién y la vista previa de cada PDF: renovar (nueva fecha de fin y FMI actualizada), baja (FMI con la sección de cese e indicación de recuperar la laptop o el equipo, baja de credenciales y recuperación de equipo a Soporte), traspaso a otro cliente, área o puesto (FMI con la sección de movimiento y, si se pide, modificación de credenciales) y cambio a otro RQ abierto de BDT (FMI de salida y aviso a Selección para gestionar el ingreso en BDT).
+- Colaboradores muestra los días que faltan para el fin del contrato, el nivel de alerta y la operación en curso o ejecutada. Cada operación queda en el historial del ingreso y en el registro de envíos, con reenvío.
+- El equipo entregado según la ficha de equipo aprobada queda registrado por colaborador (entregado, por recuperar o recuperado) para las futuras pantallas de Soporte. BDT recibe los eventos RENEWED, TERMINATED, TRANSFERRED y RQ_CHANGE_REQUESTED.
+
 ## v0.12 — 2026-11-25
 - La reclutadora puede dirigir en BDT una solicitud de ingreso a un gestor puntual, además de los gestores del cliente (por ejemplo, ciertos RQ de un cliente los atiende otro gestor). Ese gestor la ve en su bandeja, puede aprobar las fichas y recibe los recordatorios.
 

@@ -32,16 +32,17 @@ var formMeta = map[string]struct{ Code, Title, File string }{
 // gestor que aprueba, días de gracia para corregir, cada cuántos días se recuerdan los pendientes y dominio corporativo.
 // Los solicitantes (quien confirmó en BDT y el analista del RQ) se agregan solos a cada envío.
 type HireFormSettings struct {
-	Recipients      map[string][]string `json:"recipients,omitempty"` // compatibilidad: por ficha (derivado de los grupos)
-	SupportEmails   []string            `json:"supportEmails"`
-	TalentEmails    []string            `json:"talentEmails"`
-	CCEmails        []string            `json:"ccEmails"`
-	ReminderDays    int                 `json:"reminderDays"`
-	CCManager       bool                `json:"ccManager"`
-	EditGraceDays   int                 `json:"editGraceDays"`
-	CorporateDomain string              `json:"corporateDomain"`
-	Company         string              `json:"company,omitempty"`
-	TaxID           string              `json:"taxId,omitempty"`
+	Recipients        map[string][]string `json:"recipients,omitempty"` // compatibilidad: por ficha (derivado de los grupos)
+	SupportEmails     []string            `json:"supportEmails"`
+	TalentEmails      []string            `json:"talentEmails"`
+	CCEmails          []string            `json:"ccEmails"`
+	ReminderDays      int                 `json:"reminderDays"`
+	ContractAlertDays []int               `json:"contractAlertDays"` // días de aviso del fin de contrato (de mayor a menor)
+	CCManager         bool                `json:"ccManager"`
+	EditGraceDays     int                 `json:"editGraceDays"`
+	CorporateDomain   string              `json:"corporateDomain"`
+	Company           string              `json:"company,omitempty"`
+	TaxID             string              `json:"taxId,omitempty"`
 }
 
 func (s *SelectionService) settings(ctx context.Context, tid uint64) (*HireFormSettings, error) {
@@ -68,6 +69,11 @@ func (s *SelectionService) settings(ctx context.Context, tid uint64) (*HireFormS
 	}
 	if out.ReminderDays != 3 {
 		out.ReminderDays = 2
+	}
+	if d, err := normalizeAlertDays(out.ContractAlertDays); err == nil {
+		out.ContractAlertDays = d
+	} else {
+		out.ContractAlertDays = append([]int{}, DefaultContractAlertDays...)
 	}
 	return &out, nil
 }
@@ -105,6 +111,13 @@ func (s *SelectionService) SaveFormSettings(ctx context.Context, p *domain.Princ
 	if in.ReminderDays != 2 && in.ReminderDays != 3 {
 		return domain.ErrValidation
 	}
+	days, err := normalizeAlertDays(in.ContractAlertDays)
+	if err != nil {
+		return err
+	}
+	if len(in.ContractAlertDays) == 0 { // sin el campo (pantalla anterior): se conserva lo guardado
+		days = nil
+	}
 	clean := func(list []string) ([]string, error) {
 		out, seen := []string{}, map[string]bool{}
 		for _, e := range list {
@@ -136,7 +149,7 @@ func (s *SelectionService) SaveFormSettings(ctx context.Context, p *domain.Princ
 		return err
 	}
 	return s.Repo.HireFormSettingSave(ctx, meta(p, ip), tid, ports.HireFormSettingInput{Support: sup, Talent: tal, CC: cc,
-		CCManager: in.CCManager, GraceDays: in.EditGraceDays, ReminderDays: in.ReminderDays, Domain: in.CorporateDomain})
+		CCManager: in.CCManager, GraceDays: in.EditGraceDays, ReminderDays: in.ReminderDays, Domain: in.CorporateDomain, ContractDays: days})
 }
 
 // ---------------- Impresión ----------------
@@ -342,6 +355,10 @@ func (s *SelectionService) formContext(ctx context.Context, p *domain.Principal,
 		if hm != nil {
 			forms = s.formsFromHire(hm)
 			signerID, signerName = str(hm, "signerId"), str(hm, "signerName")
+			// el cliente actual del contrato (cambia con un traspaso)
+			if cl, ok := hm["client"].(map[string]any); ok && str(cl, "label") != "" {
+				req["client"] = cl
+			}
 		}
 		if forms == nil {
 			if forms, _, err = s.draftOf(ctx, p, tid, requestID, true); err != nil {

@@ -218,7 +218,8 @@ BEGIN
            'canAct', v_admin = 1 OR h.directed_user_id <=> p_actor_id OR NOT EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid)
                      OR EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid AND m.user_id = p_actor_id),
            'dispatches', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('form', d.form, 'reason', d.reason, 'recipients', d.recipients,
-                                                                  'status', d.status, 'error', d.error, 'at', d.created_at))
+                                                                  'status', d.status, 'error', d.error, 'at', d.created_at,
+                                                                  'operation', (SELECT o.type FROM hire_contract_op o WHERE o.id = d.contract_op_id)))
                                    FROM (SELECT * FROM hire_form_dispatch WHERE hire_request_id = h.id ORDER BY id DESC LIMIT 60) d), JSON_ARRAY()),
            'confirmedAt', h.confirmed_at, 'receivedAt', h.received_at, 'takenAt', h.taken_at, 'cancelledAt', h.cancelled_at,
            'completedAt', h.completed_at, 'revokedAt', h.revoked_at, 'assignedNameEnc', TO_BASE64(u.full_name_enc),
