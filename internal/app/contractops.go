@@ -32,11 +32,12 @@ import (
 const (
 	OpRenew     = "RENEW"
 	OpTerminate = "TERMINATE"
-	OpTransfer  = "TRANSFER"
+	OpTransfer  = "TRANSFER" // compatibilidad: traspaso de área = movimiento con cambio de área
 	OpRQChange  = "RQ_CHANGE"
+	OpMovement  = "MOVEMENT"
 )
 
-var opReason = map[string]string{OpRenew: "RENEWED", OpTerminate: "TERMINATED", OpTransfer: "TRANSFERRED", OpRQChange: "RQ_CHANGE"}
+var opReason = map[string]string{OpRenew: "RENEWED", OpTerminate: "TERMINATED", OpTransfer: "TRANSFERRED", OpRQChange: "RQ_CHANGE", OpMovement: "MOVED"}
 
 // ContractOpInput: lo indicado en el asistente. Date: cese (baja), movimiento (traspaso) o salida (cambio de RQ).
 // EndDate: nueva fecha de fin (renovar; en traspaso, salvo Indefinite). Pay: nueva remuneración del traspaso (nil = sin
@@ -58,6 +59,12 @@ type ContractOpInput struct {
 	ProjectService      string   `json:"projectService,omitempty"`
 	CurrencyID          string   `json:"currencyId,omitempty"`
 	Pay                 *Pay     `json:"pay,omitempty"`
+	ChangeArea          bool     `json:"changeArea,omitempty"`
+	ChangePosition      bool     `json:"changePosition,omitempty"`
+	ChangeSchedule      bool     `json:"changeSchedule,omitempty"`
+	ChangeWorkplace     bool     `json:"changeWorkplace,omitempty"`
+	ChangeEndDate       bool     `json:"changeEndDate,omitempty"`
+	ChangePay           bool     `json:"changePay,omitempty"`
 	ModifyCredentials   bool     `json:"modifyCredentials,omitempty"`
 	NewUsername         string   `json:"newUsername,omitempty"`
 	NewEmail            string   `json:"newEmail,omitempty"`
@@ -67,9 +74,35 @@ type ContractOpInput struct {
 
 func reqDate(v string) bool { return v != "" && validDate(v) }
 
-// validate revisa la operación contra el contrato vigente (inicio, fin y área actuales) y deja solo lo que aplica.
-func (in *ContractOpInput) validate(start, end, areaID string) error {
+// contractCur: el contrato vigente contra el que se valida una operación.
+type contractCur struct {
+	Start, End, AreaID, Position, Schedule, SiteID, Location, Project string
+}
+
+func curOf(cd *contractDoc) contractCur {
+	c := contractCur{Start: cd.StartDate, End: dateOnly(cd.EndDate), AreaID: cd.Area.ID, Position: cd.Position, Schedule: cd.Schedule,
+		Location: cd.Location, Project: cd.ProjectService}
+	if cd.Site != nil {
+		c.SiteID = cd.Site.ID
+	}
+	return c
+}
+
+// validate revisa la operación contra el contrato vigente y deja solo lo que aplica. Un TRANSFER (asistente anterior)
+// se convierte en movimiento con cambio de área y los demás cambios que difieran del contrato.
+func (in *ContractOpInput) validate(cur contractCur) error {
+	start, end, areaID := cur.Start, cur.End, cur.AreaID
 	in.Type = strings.ToUpper(strings.TrimSpace(in.Type))
+	if in.Type == OpTransfer {
+		in.Type, in.ChangeArea, in.ChangePay = OpMovement, true, in.Pay != nil
+		in.ChangePosition = strings.TrimSpace(in.Position) != "" && strings.TrimSpace(in.Position) != cur.Position
+		in.ChangeSchedule = strings.TrimSpace(in.Schedule) != "" && strings.TrimSpace(in.Schedule) != cur.Schedule
+		in.ChangeWorkplace = in.SiteID != cur.SiteID || strings.TrimSpace(in.Location) != cur.Location || strings.TrimSpace(in.ProjectService) != cur.Project
+		in.ChangeEndDate = (in.Indefinite && cur.End != "") || (!in.Indefinite && in.EndDate != "" && in.EndDate != dateOnly(cur.End))
+		if strings.TrimSpace(in.Reason) == "" {
+			in.Reason = "Traspaso de área"
+		}
+	}
 	in.Reason, in.Position, in.Schedule = strings.TrimSpace(in.Reason), strings.TrimSpace(in.Position), strings.TrimSpace(in.Schedule)
 	in.Location, in.ProjectService = strings.TrimSpace(in.Location), strings.TrimSpace(in.ProjectService)
 	in.NewUsername, in.NewEmail = strings.TrimSpace(in.NewUsername), strings.ToLower(strings.TrimSpace(in.NewEmail))
@@ -109,22 +142,74 @@ func (in *ContractOpInput) validate(start, end, areaID string) error {
 		}
 		*in = ContractOpInput{Type: in.Type, Date: in.Date, Reason: in.Reason, TerminationReasonID: in.TerminationReasonID,
 			RecoverEquipment: in.RecoverEquipment, EquipmentReturnDate: in.EquipmentReturnDate}
-	case OpTransfer:
-		if !validUUID(in.AreaID) || in.Position == "" || in.Schedule == "" || !optUUID(in.SiteID) || !optUUID(in.CurrencyID) {
-			return domain.ErrValidation
+	case OpMovement:
+		if !(in.ChangeArea || in.ChangePosition || in.ChangeSchedule || in.ChangeWorkplace || in.ChangeEndDate || in.ChangePay) {
+			return domain.NewError("MOVEMENT_NO_CHANGE")
 		}
-		if in.AreaID == areaID {
-			return domain.NewError("TRANSFER_SAME_AREA")
+		if in.Reason == "" {
+			return domain.NewError("REASON_REQUIRED")
 		}
 		if err := afterStart(in.Date); err != nil {
 			return err
 		}
-		if in.Indefinite {
-			in.EndDate = ""
-		} else if !reqDate(in.EndDate) || in.EndDate <= in.Date {
-			return domain.NewError("CONTRACT_DATE_INVALID")
+		out := ContractOpInput{Type: OpMovement, Date: in.Date, Reason: in.Reason}
+		if in.ChangeArea {
+			if !validUUID(in.AreaID) {
+				return domain.ErrValidation
+			}
+			if in.AreaID == areaID {
+				return domain.NewError("TRANSFER_SAME_AREA")
+			}
+			out.ChangeArea, out.AreaID = true, in.AreaID
 		}
-		if in.Pay != nil {
+		if in.ChangePosition {
+			if in.Position == "" {
+				return domain.ErrValidation
+			}
+			if in.Position == cur.Position {
+				return domain.NewError("MOVEMENT_NO_CHANGE")
+			}
+			out.ChangePosition, out.Position = true, in.Position
+		}
+		if in.ChangeSchedule {
+			if in.Schedule == "" {
+				return domain.ErrValidation
+			}
+			if in.Schedule == cur.Schedule {
+				return domain.NewError("MOVEMENT_NO_CHANGE")
+			}
+			out.ChangeSchedule, out.Schedule = true, in.Schedule
+		}
+		if in.ChangeWorkplace {
+			if !optUUID(in.SiteID) {
+				return domain.ErrValidation
+			}
+			if in.SiteID == cur.SiteID && in.Location == cur.Location && in.ProjectService == cur.Project {
+				return domain.NewError("MOVEMENT_NO_CHANGE")
+			}
+			out.ChangeWorkplace, out.SiteID, out.Location, out.ProjectService = true, in.SiteID, in.Location, in.ProjectService
+		}
+		if in.ChangeEndDate {
+			if in.Indefinite {
+				if end == "" {
+					return domain.NewError("MOVEMENT_NO_CHANGE")
+				}
+				out.Indefinite = true
+			} else {
+				if !reqDate(in.EndDate) || in.EndDate <= in.Date || in.EndDate < start {
+					return domain.NewError("CONTRACT_DATE_INVALID")
+				}
+				if in.EndDate == end {
+					return domain.NewError("MOVEMENT_NO_CHANGE")
+				}
+				out.EndDate = in.EndDate
+			}
+			out.ChangeEndDate = true
+		}
+		if in.ChangePay {
+			if in.Pay == nil || !optUUID(in.CurrencyID) {
+				return domain.ErrValidation
+			}
 			for _, v := range []float64{in.Pay.Base, in.Pay.Mobility, in.Pay.Quarterly, in.Pay.Semiannual, in.Pay.Fee} {
 				if !validAmount(v) {
 					return domain.ErrValidation
@@ -133,6 +218,7 @@ func (in *ContractOpInput) validate(start, end, areaID string) error {
 			if !validPay(in.Pay) {
 				return domain.NewError("PAY_REQUIRED")
 			}
+			out.ChangePay, out.Pay, out.CurrencyID = true, in.Pay, in.CurrencyID
 		}
 		if in.ModifyCredentials {
 			if in.NewUsername == "" && in.NewEmail == "" {
@@ -146,13 +232,9 @@ func (in *ContractOpInput) validate(start, end, areaID string) error {
 					return domain.ErrValidation
 				}
 			}
-		} else {
-			in.NewUsername, in.NewEmail = "", ""
+			out.ModifyCredentials, out.NewUsername, out.NewEmail = true, in.NewUsername, in.NewEmail
 		}
-		*in = ContractOpInput{Type: in.Type, Date: in.Date, EndDate: in.EndDate, Indefinite: in.Indefinite, Reason: in.Reason,
-			AreaID: in.AreaID, Position: in.Position, Schedule: in.Schedule, SiteID: in.SiteID, Location: in.Location,
-			ProjectService: in.ProjectService, CurrencyID: in.CurrencyID, Pay: in.Pay,
-			ModifyCredentials: in.ModifyCredentials, NewUsername: in.NewUsername, NewEmail: in.NewEmail}
+		*in = out
 	case OpRQChange:
 		ids := append([]string{}, in.RequirementIDs...)
 		if in.RequirementID != "" {
@@ -301,6 +383,8 @@ type contractOpData struct {
 	Equipment    []equipItem      `json:"equipment,omitempty"`
 	Users        *UserRequest     `json:"users,omitempty"`
 	Scheduled    bool             `json:"scheduled,omitempty"`
+	Changed      []string         `json:"changed,omitempty"` // movimiento: AREA, POSITION, SCHEDULE, WORKPLACE, END_DATE, PAY
+	Changes      []FieldChange    `json:"changes,omitempty"` // para el historial cuando se aplica (baja o movimiento programados)
 	PayEnc       string           `json:"payEnc,omitempty"`
 	BeforePayEnc string           `json:"beforePayEnc,omitempty"`
 	newPay       *Pay
@@ -357,12 +441,21 @@ func (s *SelectionService) buildOpData(ctx context.Context, p *domain.Principal,
 				}
 			}
 		}
-	case OpTransfer:
-		op.Labels.Client = cd.Client.Label
+	case OpMovement:
+		op.Scheduled = in.Date > limaDate()
 		if op.Labels.Currency == "" {
 			op.Labels.Currency = cd.Currency.Code
 		}
-		if in.Pay != nil {
+		for _, x := range []struct {
+			on   bool
+			code string
+		}{{in.ChangeArea, "AREA"}, {in.ChangePosition, "POSITION"}, {in.ChangeSchedule, "SCHEDULE"}, {in.ChangeWorkplace, "WORKPLACE"},
+			{in.ChangeEndDate, "END_DATE"}, {in.ChangePay, "PAY"}} {
+			if x.on {
+				op.Changed = append(op.Changed, x.code)
+			}
+		}
+		if in.ChangePay && in.Pay != nil {
 			enc, err := s.encryptPay(in.Pay)
 			if err != nil {
 				return nil, err
@@ -430,16 +523,26 @@ func (op *contractOpData) changes() []FieldChange {
 		if in.RecoverEquipment {
 			add("equipmentReturnDate", "", in.EquipmentReturnDate)
 		}
-	case OpTransfer:
-		add("area", b.Area, op.Labels.Area)
-		add("position", b.Position, in.Position)
-		add("schedule", b.Schedule, in.Schedule)
-		add("site", b.Site, op.Labels.Site)
-		add("location", b.Location, in.Location)
-		add("projectService", b.Project, in.ProjectService)
-		add("endDate", b.EndDate, in.EndDate)
-		add("currency", b.Currency, op.Labels.Currency)
-		if op.PayEnc != "" {
+	case OpMovement:
+		if in.ChangeArea {
+			add("area", b.Area, op.Labels.Area)
+		}
+		if in.ChangePosition {
+			add("position", b.Position, in.Position)
+		}
+		if in.ChangeSchedule {
+			add("schedule", b.Schedule, in.Schedule)
+		}
+		if in.ChangeWorkplace {
+			add("site", b.Site, op.Labels.Site)
+			add("location", b.Location, in.Location)
+			add("projectService", b.Project, in.ProjectService)
+		}
+		if in.ChangeEndDate {
+			add("endDate", b.EndDate, in.EndDate)
+		}
+		if in.ChangePay {
+			add("currency", b.Currency, op.Labels.Currency)
 			out = append(out, FieldChange{Field: "pay"})
 		}
 		add("movementDate", "", in.Date)
@@ -461,7 +564,7 @@ func opForms(op *contractOpData) []string {
 			return []string{"FMI", "USERS", "RECOVERY"}
 		}
 		return []string{"FMI", "USERS"}
-	case OpTransfer:
+	case OpMovement, OpTransfer:
 		if op.Input.ModifyCredentials {
 			return []string{"FMI", "USERS"}
 		}
@@ -490,7 +593,7 @@ func (s *SelectionService) prepareOp(ctx context.Context, p *domain.Principal, t
 	if cd.Status != "ACTIVE" {
 		return nil, nil, domain.NewError("CONTRACT_CLOSED")
 	}
-	if err := in.validate(cd.StartDate, cd.EndDate, cd.Area.ID); err != nil {
+	if err := in.validate(curOf(cd)); err != nil {
 		return nil, nil, err
 	}
 	if in.Pay != nil && !p.Has("employee.salary.read") { // sin acceso a remuneraciones no se cambia la remuneración
@@ -523,8 +626,9 @@ func (s *SelectionService) ContractOp(ctx context.Context, p *domain.Principal, 
 	if op.PayEnc != "" {
 		payEnc, _ = base64.StdEncoding.DecodeString(op.PayEnc)
 	}
+	op.Changes = op.changes()
 	data, _ := json.Marshal(op)
-	changes, _ := json.Marshal(op.changes())
+	changes, _ := json.Marshal(op.Changes)
 	id, status, err := s.Repo.HireContractOp(ctx, meta(p, ip), tid, ports.ContractOpWrite{RequestID: requestID, OpID: uuid.NewString(), Type: in.Type,
 		Date: date, EndDate: in.EndDate, Today: today, TerminationReasonID: in.TerminationReasonID, Recover: in.RecoverEquipment,
 		ReturnDate: in.EquipmentReturnDate, AreaID: in.AreaID, Position: in.Position, Schedule: in.Schedule, SiteID: in.SiteID,
@@ -559,7 +663,7 @@ func (s *SelectionService) ChangeScheduledOp(ctx context.Context, p *domain.Prin
 	var x struct {
 		Data contractOpData `json:"data"`
 	}
-	if err := json.Unmarshal(raw, &x); err != nil || x.Data.Type != OpTerminate {
+	if err := json.Unmarshal(raw, &x); err != nil || (x.Data.Type != OpTerminate && x.Data.Type != OpMovement) {
 		return "", domain.NewError("CONTRACT_NOT_SCHEDULED")
 	}
 	if action == "CANCEL" {
@@ -842,23 +946,34 @@ func contractPrint(form string, c *formContext, op *contractOpData) ports.FormPr
 			if in.Reason != "" {
 				note(f, "Baja: "+in.Reason)
 			}
-		case OpTransfer:
+		case OpMovement:
 			b := op.Before
-			if in.Position != b.Position {
-				f.MovePosition = in.Position
+			arrow := func(from, to string) string { return orDash(from) + " → " + orDash(to) }
+			if in.ChangePosition {
+				f.MovePosition = arrow(b.Position, in.Position)
 			}
-			f.MoveArea = op.Labels.Area
-			if in.Schedule != b.Schedule {
-				f.MoveSchedule = in.Schedule
+			if in.ChangeArea {
+				f.MoveArea = arrow(b.Area, op.Labels.Area)
 			}
-			if op.Labels.Site != b.Site {
-				f.MoveSite = orDash(op.Labels.Site)
+			if in.ChangeSchedule {
+				f.MoveSchedule = arrow(b.Schedule, in.Schedule)
 			}
-			if in.ProjectService != b.Project {
-				f.MoveProject = orDash(in.ProjectService)
+			if in.ChangeWorkplace {
+				if op.Labels.Site != b.Site {
+					f.MoveSite = arrow(b.Site, op.Labels.Site)
+				}
+				if in.ProjectService != b.Project {
+					f.MoveProject = arrow(b.Project, in.ProjectService)
+				}
+				if in.Location != b.Location {
+					note(f, "Lugar de trabajo: "+arrow(b.Location, in.Location)+".")
+				}
+			}
+			if in.ChangeEndDate {
+				f.MoveEnd = arrow(endText(b.EndDate), endText(in.EndDate))
 			}
 			f.MoveDate = fmtDate(in.Date)
-			if op.PayEnc != "" {
+			if in.ChangePay {
 				if !c.withPay {
 					f.MoveBase = "Reservado"
 				} else if op.newPay != nil {
@@ -867,18 +982,12 @@ func contractPrint(form string, c *formContext, op *contractOpData) ports.FormPr
 						payParts(op.newPay, currencySymbol(op.Labels.Currency), rxh)
 				}
 			}
-			end := "Indeterminado"
-			if in.EndDate != "" {
-				end = fmtDate(in.EndDate)
-			}
-			parts := []string{fmt.Sprintf("Traspaso al área %s desde el %s. Término de contrato: %s.", op.Labels.Area, fmtDate(in.Date), end)}
-			if in.Location != b.Location {
-				parts = append(parts, "Lugar de trabajo: "+orDash(in.Location)+".")
+			if op.Scheduled {
+				note(f, fmt.Sprintf("Movimiento programado: se aplica el %s.", fmtDate(in.Date)))
 			}
 			if in.Reason != "" {
-				parts = append(parts, in.Reason)
+				note(f, "Motivo del movimiento: "+in.Reason)
 			}
-			note(f, strings.Join(parts, " "))
 		case OpRQChange:
 			f.TermReason = "Cambio a otro requerimiento: " + op.rqCodes()
 			f.TermDate, f.MoveDate = fmtDate(in.Date), fmtDate(in.Date)

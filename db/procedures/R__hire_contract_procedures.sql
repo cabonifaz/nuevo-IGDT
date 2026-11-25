@@ -95,6 +95,8 @@ BEGIN
     UPDATE employee_credential SET status = 'DEACTIVATION_REQUESTED', deactivation_requested_at = NOW(3), updated_by = p_actor_id
      WHERE employee_id = v_emp AND status = 'ACTIVE';
     UPDATE hire_contract_op SET status = 'EXECUTED' WHERE id = p_op_id;
+    INSERT INTO hire_change (tenant_id, hire_id, type, changes, reason, created_by)
+    SELECT v_tenant, v_hire, 'TERMINATED', IFNULL(JSON_EXTRACT(v_data, '$.changes'), JSON_ARRAY()), reason, p_actor_id FROM hire_contract_op WHERE id = p_op_id;
     INSERT INTO hire_event (tenant_id, type, candidate_uuid, requirement_uuid, data)
     SELECT v_tenant, 'TERMINATED', h.candidate_uuid, h.requirement_uuid,
            JSON_OBJECT('hireId', x.uuid, 'employeeId', e.uuid, 'talentId', h.talent_uuid, 'operationId', v_op, 'terminationDate', v_date,
@@ -104,13 +106,81 @@ BEGIN
   END IF;
 END $$
 
+-- Aplica un movimiento (op MOVEMENT registrada y bloqueada por el llamador, dentro de su transacción) con los cambios
+-- marcados en data.input (changeArea, changePosition, changeSchedule, changeWorkplace, changeEndDate, changePay) y, si se
+-- pidió, actualiza las credenciales. Queda en el historial (MOVED) y BDT recibe MOVED. Si el contrato ya no está vigente,
+-- la operación queda anulada. p_actor_id: quien confirmó el movimiento (también si lo aplica la rutina diaria).
+DROP PROCEDURE IF EXISTS sp_hire_movement_apply $$
+CREATE PROCEDURE sp_hire_movement_apply(IN p_op_id BIGINT UNSIGNED, IN p_actor_id BIGINT UNSIGNED)
+BEGIN
+  DECLARE v_hire, v_tenant, v_emp, v_old_area BIGINT UNSIGNED;
+  DECLARE v_data JSON;
+  DECLARE v_op CHAR(36);
+  DECLARE v_status VARCHAR(12);
+  DECLARE v_old_end, v_date DATE;
+  SELECT hire_id, tenant_id, data, uuid INTO v_hire, v_tenant, v_data, v_op FROM hire_contract_op WHERE id = p_op_id;
+  SELECT employee_id, status, area_item_id, end_date INTO v_emp, v_status, v_old_area, v_old_end FROM hire WHERE id = v_hire FOR UPDATE;
+  IF v_status <> 'ACTIVE' THEN
+    UPDATE hire_contract_op SET status = 'CANCELLED' WHERE id = p_op_id;
+  ELSE
+    SET v_date = CAST(JSON_UNQUOTE(JSON_EXTRACT(v_data, '$.input.date')) AS DATE);
+    IF JSON_EXTRACT(v_data, '$.input.changeArea') = CAST('true' AS JSON) THEN
+      UPDATE hire SET area_item_id = (SELECT id FROM master_item WHERE uuid = JSON_UNQUOTE(JSON_EXTRACT(v_data, '$.input.areaId'))) WHERE id = v_hire;
+    END IF;
+    IF JSON_EXTRACT(v_data, '$.input.changePosition') = CAST('true' AS JSON) THEN
+      UPDATE hire SET position = JSON_UNQUOTE(JSON_EXTRACT(v_data, '$.input.position')) WHERE id = v_hire;
+    END IF;
+    IF JSON_EXTRACT(v_data, '$.input.changeSchedule') = CAST('true' AS JSON) THEN
+      UPDATE hire SET schedule = JSON_UNQUOTE(JSON_EXTRACT(v_data, '$.input.schedule')) WHERE id = v_hire;
+    END IF;
+    IF JSON_EXTRACT(v_data, '$.input.changeWorkplace') = CAST('true' AS JSON) THEN
+      UPDATE hire SET work_site_item_id = (SELECT id FROM master_item WHERE uuid = JSON_UNQUOTE(JSON_EXTRACT(v_data, '$.input.siteId'))),
+             location = NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_data, '$.input.location')), ''),
+             project_service = NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_data, '$.input.projectService')), '')
+       WHERE id = v_hire;
+    END IF;
+    IF JSON_EXTRACT(v_data, '$.input.changeEndDate') = CAST('true' AS JSON) THEN
+      UPDATE hire SET end_date = IF(JSON_EXTRACT(v_data, '$.input.indefinite') = CAST('true' AS JSON), NULL,
+                                    CAST(JSON_UNQUOTE(JSON_EXTRACT(v_data, '$.input.endDate')) AS DATE))
+       WHERE id = v_hire;
+    END IF;
+    IF JSON_EXTRACT(v_data, '$.input.changePay') = CAST('true' AS JSON) AND JSON_UNQUOTE(JSON_EXTRACT(v_data, '$.payEnc')) <> '' THEN
+      UPDATE hire SET pay_enc = FROM_BASE64(JSON_UNQUOTE(JSON_EXTRACT(v_data, '$.payEnc'))),
+             currency_item_id = IFNULL((SELECT id FROM master_item WHERE uuid = JSON_UNQUOTE(JSON_EXTRACT(v_data, '$.input.currencyId'))), currency_item_id)
+       WHERE id = v_hire;
+    END IF;
+    UPDATE hire SET updated_at = NOW(3), updated_by = p_actor_id WHERE id = v_hire;
+    IF JSON_EXTRACT(v_data, '$.input.modifyCredentials') = CAST('true' AS JSON) THEN
+      UPDATE employee_credential
+         SET username = IFNULL(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_data, '$.input.newUsername')), ''), username),
+             email = IFNULL(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_data, '$.input.newEmail')), ''), email), updated_by = p_actor_id
+       WHERE employee_id = v_emp AND status = 'ACTIVE';
+    END IF;
+    UPDATE hire_contract_op SET status = 'EXECUTED' WHERE id = p_op_id;
+    INSERT INTO hire_change (tenant_id, hire_id, type, changes, reason, created_by)
+    SELECT v_tenant, v_hire, 'MOVED', IFNULL(JSON_EXTRACT(v_data, '$.changes'), JSON_ARRAY()), reason, p_actor_id FROM hire_contract_op WHERE id = p_op_id;
+    INSERT INTO hire_event (tenant_id, type, candidate_uuid, requirement_uuid, data)
+    SELECT v_tenant, 'MOVED', h.candidate_uuid, h.requirement_uuid,
+           JSON_OBJECT('hireId', x.uuid, 'employeeId', e.uuid, 'talentId', h.talent_uuid, 'operationId', v_op, 'date', v_date,
+                       'changed', IFNULL(JSON_EXTRACT(v_data, '$.changed'), JSON_ARRAY()),
+                       'area', JSON_OBJECT('id', a.uuid, 'label', JSON_UNQUOTE(JSON_EXTRACT(a.label_i18n, '$.es'))),
+                       'previousArea', (SELECT JSON_OBJECT('id', uuid, 'label', JSON_UNQUOTE(JSON_EXTRACT(label_i18n, '$.es'))) FROM master_item WHERE id = v_old_area),
+                       'position', x.position, 'schedule', x.schedule, 'endDate', x.end_date, 'previousEndDate', v_old_end,
+                       'payChanged', IFNULL(JSON_EXTRACT(v_data, '$.input.changePay') = CAST('true' AS JSON), FALSE),
+                       'reason', (SELECT reason FROM hire_contract_op WHERE id = p_op_id))
+      FROM hire x JOIN hire_request h ON h.id = x.hire_request_id JOIN employee e ON e.id = x.employee_id JOIN master_item a ON a.id = x.area_item_id
+     WHERE x.id = v_hire;
+  END IF;
+END $$
+
 -- Ejecuta una operación de fin de contrato sobre el ingreso de la solicitud (validada también en la API).
 --   RENEW      p_end (> fin actual) y p_reason: extiende el contrato.                                     RENEWED.
 --   TERMINATE  p_date (cese), p_term_reason_uuid, p_recover y p_return_date. Si p_date <= p_today se hace efectiva ya
 --              (TERMINATED); si es futura queda SCHEDULED y la rutina diaria la aplica en esa fecha.     TERMINATED.
---   TRANSFER   traspaso de área en el mismo cliente: p_area_uuid (distinta de la actual), p_position, p_schedule,
---              p_site_uuid (sede), p_location, p_project, p_end (NULL = indeterminado), p_currency_uuid y p_pay_enc
---              (NULL = sin cambio de remuneración) y p_date (movimiento).                               TRANSFERRED.
+--   MOVEMENT   movimiento (traspaso de área en el mismo cliente, remuneración, cargo, jornada, sede / lugar / proyecto y
+--              fecha de fin): los cambios van en p_data.input (y la remuneración cifrada en p_data.payEnc); aquí se
+--              validan p_area_uuid (distinta de la actual), p_site_uuid, p_currency_uuid, p_end y p_date (fecha
+--              efectiva). Con p_date > p_today queda SCHEDULED y la rutina diaria lo aplica.            MOVED.
 --   RQ_CHANGE  p_rqs: uno o más RQ abiertos de BDT y p_date (salida): cierra el contrato (RQ_CHANGED).  RQ_CHANGE_REQUESTED.
 -- p_data: entradas, etiquetas y la foto del contrato antes del cambio. p_changes: [{"field","from","to"}].
 DROP PROCEDURE IF EXISTS sp_hire_contract_op $$
@@ -129,12 +199,12 @@ BEGIN
   DECLARE v_scheduled TINYINT DEFAULT 0;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN ROLLBACK; RESIGNAL; END;
   CALL sp_assert_actor(p_actor_id, p_tenant_id, 'hire.write');
-  IF p_type NOT IN ('RENEW', 'TERMINATE', 'TRANSFER', 'RQ_CHANGE') OR p_data IS NULL OR JSON_TYPE(p_data) <> 'OBJECT' OR p_today IS NULL THEN
+  IF p_type NOT IN ('RENEW', 'TERMINATE', 'MOVEMENT', 'RQ_CHANGE') OR p_data IS NULL OR JSON_TYPE(p_data) <> 'OBJECT' OR p_today IS NULL THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:VALIDATION';
   END IF;
   IF p_type = 'TERMINATE' THEN CALL sp_catalog_item_resolve(p_tenant_id, 'TERMINATION_REASON', p_term_reason_uuid, v_term); END IF;
-  IF p_type = 'TRANSFER' THEN
-    CALL sp_catalog_item_resolve(p_tenant_id, 'AREA', p_area_uuid, v_area);
+  IF p_type = 'MOVEMENT' THEN
+    IF p_area_uuid IS NOT NULL THEN CALL sp_catalog_item_resolve(p_tenant_id, 'AREA', p_area_uuid, v_area); END IF;
     IF p_site_uuid IS NOT NULL THEN CALL sp_catalog_item_resolve(p_tenant_id, 'WORK_SITE', p_site_uuid, v_site); END IF;
     IF p_currency_uuid IS NOT NULL THEN CALL sp_catalog_item_resolve(p_tenant_id, 'CURRENCY', p_currency_uuid, v_currency); END IF;
   END IF;
@@ -156,28 +226,12 @@ BEGIN
     IF p_recover = 1 AND p_return_date IS NULL THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:VALIDATION'; END IF;
     SET v_scheduled = p_date > p_today;
     SET v_status = IF(v_scheduled = 1, 'SCHEDULED', 'EXECUTED'), v_change = IF(v_scheduled = 1, 'TERM_SCHEDULED', 'TERMINATED');
-  ELSEIF p_type = 'TRANSFER' THEN
-    IF TRIM(IFNULL(p_position, '')) = '' OR TRIM(IFNULL(p_schedule, '')) = '' OR v_area = v_old_area THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:VALIDATION';
-    END IF;
-    IF p_end IS NOT NULL AND p_end <= p_date THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:CONTRACT_DATE_INVALID'; END IF;
-    UPDATE hire SET area_item_id = v_area, position = TRIM(p_position), schedule = TRIM(p_schedule), work_site_item_id = v_site,
-           location = NULLIF(TRIM(p_location), ''), project_service = NULLIF(TRIM(p_project), ''), end_date = p_end,
-           currency_item_id = IFNULL(v_currency, currency_item_id), pay_enc = IFNULL(p_pay_enc, pay_enc),
-           updated_at = NOW(3), updated_by = p_actor_id
-     WHERE id = v_hire;
-    -- credenciales: si se pidió modificarlas, quedan con los nuevos datos
-    IF JSON_EXTRACT(p_data, '$.input.modifyCredentials') = CAST('true' AS JSON) THEN
-      UPDATE employee_credential
-         SET username = IFNULL(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p_data, '$.input.newUsername')), ''), username),
-             email = IFNULL(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p_data, '$.input.newEmail')), ''), email), updated_by = p_actor_id
-       WHERE employee_id = v_emp AND status = 'ACTIVE';
-    END IF;
-    SET v_change = 'TRANSFERRED', v_event = 'TRANSFERRED',
-        v_event_data = JSON_OBJECT('date', p_date,
-                                   'area', (SELECT JSON_OBJECT('id', uuid, 'label', JSON_UNQUOTE(JSON_EXTRACT(label_i18n, '$.es'))) FROM master_item WHERE id = v_area),
-                                   'previousArea', (SELECT JSON_OBJECT('id', uuid, 'label', JSON_UNQUOTE(JSON_EXTRACT(label_i18n, '$.es'))) FROM master_item WHERE id = v_old_area),
-                                   'position', TRIM(p_position), 'endDate', p_end, 'previousEndDate', v_end, 'payChanged', p_pay_enc IS NOT NULL);
+  ELSEIF p_type = 'MOVEMENT' THEN
+    IF TRIM(IFNULL(p_reason, '')) = '' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:REASON_REQUIRED'; END IF;
+    IF v_area IS NOT NULL AND v_area = v_old_area THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:TRANSFER_SAME_AREA'; END IF;
+    IF p_end IS NOT NULL AND (p_end <= p_date OR p_end < v_start) THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:CONTRACT_DATE_INVALID'; END IF;
+    SET v_scheduled = p_date > p_today;
+    SET v_status = IF(v_scheduled = 1, 'SCHEDULED', 'EXECUTED'), v_change = 'MOVE_SCHEDULED';
   ELSE
     IF p_rqs IS NULL OR JSON_TYPE(p_rqs) <> 'ARRAY' OR JSON_LENGTH(p_rqs) NOT BETWEEN 1 AND 10
        OR (SELECT COUNT(DISTINCT r.id) FROM JSON_TABLE(p_rqs, '$[*]' COLUMNS (u CHAR(36) PATH '$')) j
@@ -205,11 +259,18 @@ BEGIN
   VALUES (p_op_uuid, p_tenant_id, v_hire, p_type, v_status, IFNULL(IF(p_type = 'RENEW', p_end, p_date), p_today), p_data,
           NULLIF(TRIM(p_reason), ''), p_actor_id);
   SET v_op = LAST_INSERT_ID();
-  INSERT INTO hire_change (tenant_id, hire_id, type, changes, reason, created_by)
-  VALUES (p_tenant_id, v_hire, v_change, IFNULL(p_changes, JSON_ARRAY()), NULLIF(TRIM(p_reason), ''), p_actor_id);
-  IF p_type = 'TERMINATE' THEN
-    IF v_scheduled = 0 THEN CALL sp_hire_terminate_apply(v_op, p_actor_id); END IF;
+  IF p_type IN ('TERMINATE', 'MOVEMENT') THEN
+    IF v_scheduled = 1 THEN
+      INSERT INTO hire_change (tenant_id, hire_id, type, changes, reason, created_by)
+      VALUES (p_tenant_id, v_hire, v_change, IFNULL(p_changes, JSON_ARRAY()), NULLIF(TRIM(p_reason), ''), p_actor_id);
+    ELSEIF p_type = 'TERMINATE' THEN
+      CALL sp_hire_terminate_apply(v_op, p_actor_id);
+    ELSE
+      CALL sp_hire_movement_apply(v_op, p_actor_id);
+    END IF;
   ELSE
+    INSERT INTO hire_change (tenant_id, hire_id, type, changes, reason, created_by)
+    VALUES (p_tenant_id, v_hire, v_change, IFNULL(p_changes, JSON_ARRAY()), NULLIF(TRIM(p_reason), ''), p_actor_id);
     INSERT INTO hire_event (tenant_id, type, candidate_uuid, requirement_uuid, data)
     SELECT p_tenant_id, v_event, h.candidate_uuid, IFNULL(v_event_rq, h.requirement_uuid),
            JSON_MERGE_PATCH(JSON_OBJECT('hireId', x.uuid, 'employeeId', e.uuid, 'talentId', h.talent_uuid, 'operationId', p_op_uuid), v_event_data)
@@ -229,12 +290,13 @@ BEGIN
   DECLARE v_op, v_hire BIGINT UNSIGNED;
   DECLARE v_old, v_start DATE;
   DECLARE v_status VARCHAR(10);
+  DECLARE v_type VARCHAR(10);
   DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN ROLLBACK; RESIGNAL; END;
   CALL sp_hire_contract_assert_manager(p_actor_id, p_tenant_id, p_request_uuid);
   IF p_action NOT IN ('RESCHEDULE', 'CANCEL') THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:VALIDATION'; END IF;
   IF TRIM(IFNULL(p_reason, '')) = '' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:REASON_REQUIRED'; END IF;
   START TRANSACTION;
-  SELECT o.id, o.hire_id, o.effective_date, o.status, x.start_date INTO v_op, v_hire, v_old, v_status, v_start
+  SELECT o.id, o.hire_id, o.effective_date, o.status, x.start_date, o.type INTO v_op, v_hire, v_old, v_status, v_start, v_type
     FROM hire_contract_op o JOIN hire x ON x.id = o.hire_id JOIN hire_request h ON h.id = x.hire_request_id
    WHERE h.tenant_id = p_tenant_id AND h.uuid = p_request_uuid AND o.uuid = p_op_uuid FOR UPDATE;
   IF v_op IS NULL THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:NOT_FOUND'; END IF;
@@ -242,7 +304,7 @@ BEGIN
   IF p_action = 'CANCEL' THEN
     UPDATE hire_contract_op SET status = 'CANCELLED', updated_by = p_actor_id WHERE id = v_op;
     INSERT INTO hire_change (tenant_id, hire_id, type, changes, reason, created_by)
-    VALUES (p_tenant_id, v_hire, 'TERM_CANCELLED', JSON_ARRAY(JSON_OBJECT('field', 'terminationDate', 'from', v_old)), TRIM(p_reason), p_actor_id);
+    VALUES (p_tenant_id, v_hire, IF(v_type = 'MOVEMENT', 'MOVE_CANCELLED', 'TERM_CANCELLED'), JSON_ARRAY(JSON_OBJECT('field', 'terminationDate', 'from', v_old)), TRIM(p_reason), p_actor_id);
     SET v_status = 'CANCELLED';
   ELSE
     IF p_date IS NULL OR p_date < v_start OR p_date = v_old THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:CONTRACT_DATE_INVALID'; END IF;
@@ -250,40 +312,44 @@ BEGIN
            updated_by = p_actor_id
      WHERE id = v_op;
     INSERT INTO hire_change (tenant_id, hire_id, type, changes, reason, created_by)
-    VALUES (p_tenant_id, v_hire, 'TERM_RESCHEDULED', JSON_ARRAY(JSON_OBJECT('field', 'terminationDate', 'from', v_old, 'to', p_date)),
+    VALUES (p_tenant_id, v_hire, IF(v_type = 'MOVEMENT', 'MOVE_RESCHEDULED', 'TERM_RESCHEDULED'),
+            JSON_ARRAY(JSON_OBJECT('field', IF(v_type = 'MOVEMENT', 'movementDate', 'terminationDate'), 'from', v_old, 'to', p_date)),
             TRIM(p_reason), p_actor_id);
-    IF p_date <= p_today THEN CALL sp_hire_terminate_apply(v_op, p_actor_id); END IF;
+    IF p_date <= p_today THEN
+      IF v_type = 'MOVEMENT' THEN CALL sp_hire_movement_apply(v_op, p_actor_id); ELSE CALL sp_hire_terminate_apply(v_op, p_actor_id); END IF;
+    END IF;
     SET v_status = (SELECT status FROM hire_contract_op WHERE id = v_op);
   END IF;
   COMMIT;
-  CALL sp_audit_insert(p_tenant_id, p_actor_id, NULL, CONCAT('TERMINATE_', p_action), 'hire_request', p_request_uuid,
+  CALL sp_audit_insert(p_tenant_id, p_actor_id, NULL, CONCAT(v_type, '_', p_action), 'hire_request', p_request_uuid,
                        JSON_OBJECT('operation', p_op_uuid, 'date', p_date), p_ip);
   SELECT v_status AS status;
 END $$
 
--- Rutina diaria: hace efectivas las bajas programadas cuya fecha de cese ya llegó (todas las empresas). Cada una en su
+-- Rutina diaria: hace efectivas las bajas y los movimientos programados cuya fecha ya llegó (todas las empresas). Cada una en su
 -- transacción; varias instancias no chocan (FOR UPDATE SKIP LOCKED y el estado SCHEDULED). Devuelve cuántas aplicó.
 DROP PROCEDURE IF EXISTS sp_contract_apply_scheduled $$
 CREATE PROCEDURE sp_contract_apply_scheduled(IN p_today DATE)
 BEGIN
   DECLARE v_id, v_actor, v_tenant BIGINT UNSIGNED;
   DECLARE v_uuid CHAR(36);
+  DECLARE v_type VARCHAR(10);
   DECLARE v_n INT DEFAULT 0;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN ROLLBACK; RESIGNAL; END;
   apply_loop: LOOP
     START TRANSACTION;
     SET v_id = NULL;
-    SELECT id, IFNULL(updated_by, created_by), tenant_id, uuid INTO v_id, v_actor, v_tenant, v_uuid
+    SELECT id, IFNULL(updated_by, created_by), tenant_id, uuid, type INTO v_id, v_actor, v_tenant, v_uuid, v_type
       FROM hire_contract_op
-     WHERE status = 'SCHEDULED' AND type = 'TERMINATE' AND effective_date <= p_today
+     WHERE status = 'SCHEDULED' AND type IN ('TERMINATE', 'MOVEMENT') AND effective_date <= p_today
      ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED;
     IF v_id IS NULL THEN
       COMMIT;
       LEAVE apply_loop;
     END IF;
-    CALL sp_hire_terminate_apply(v_id, v_actor);
+    IF v_type = 'MOVEMENT' THEN CALL sp_hire_movement_apply(v_id, v_actor); ELSE CALL sp_hire_terminate_apply(v_id, v_actor); END IF;
     COMMIT;
-    CALL sp_audit_insert(v_tenant, v_actor, NULL, 'TERMINATE_EFFECTIVE', 'hire_contract_op', v_uuid, JSON_OBJECT('date', p_today), NULL);
+    CALL sp_audit_insert(v_tenant, v_actor, NULL, CONCAT(v_type, '_EFFECTIVE'), 'hire_contract_op', v_uuid, JSON_OBJECT('date', p_today), NULL);
     SET v_n = v_n + 1;
     IF v_n >= 500 THEN LEAVE apply_loop; END IF;
   END LOOP;

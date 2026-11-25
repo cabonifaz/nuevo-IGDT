@@ -90,6 +90,7 @@ type FMIPrint struct {
 	// Movimiento y cese (fin de contrato); "" = en blanco. Recover: equipo a recuperar ("" = no aplica).
 	MoveClient, MovePosition, MoveArea, MoveSchedule, MoveDate string
 	MoveSite, MoveProject                                      string // traspaso: sede y proyecto (filas solo si cambian)
+	MoveEnd                                                    string // cambio de fecha de fin (fila solo si cambia)
 	MoveBase, MoveMobility, MoveBonus                          string // cambio de estructura salarial
 	MoveHasBase, MoveHasMobility, MoveQuarterly                bool
 	TermReason, TermDate, ReturnDate, Recover                  string

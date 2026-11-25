@@ -2,8 +2,8 @@ package app
 
 import (
 	"bytes"
-	"fmt"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -77,6 +77,7 @@ func code(err error) string {
 
 func TestContractOpValidate(t *testing.T) {
 	const start, end = "2026-06-01", "2026-12-31"
+	cur := contractCur{Start: start, End: end, AreaID: uArea, Position: "QA", Schedule: "L-V 9-6"}
 	cases := []struct {
 		name string
 		in   ContractOpInput
@@ -90,15 +91,16 @@ func TestContractOpValidate(t *testing.T) {
 		{"baja sin motivo", ContractOpInput{Type: OpTerminate, Date: end}, "VALIDATION"},
 		{"baja recuperar sin fecha", ContractOpInput{Type: OpTerminate, Date: end, TerminationReasonID: u1, RecoverEquipment: true}, "CONTRACT_DATE_INVALID"},
 		{"baja ok", ContractOpInput{Type: OpTerminate, Date: end, TerminationReasonID: u1, RecoverEquipment: true, EquipmentReturnDate: "2027-01-05"}, ""},
-		{"traspaso sin cargo", ContractOpInput{Type: OpTransfer, Date: end, AreaID: u1, Schedule: "L-V"}, "VALIDATION"},
-		{"traspaso fin antes del movimiento", ContractOpInput{Type: OpTransfer, Date: end, AreaID: u1, Position: "QA", Schedule: "L-V", EndDate: end}, "CONTRACT_DATE_INVALID"},
-		{"traspaso indeterminado", ContractOpInput{Type: OpTransfer, Date: end, AreaID: u1, Position: "QA", Schedule: "L-V", Indefinite: true, EndDate: "2020-01-01"}, ""},
-		{"traspaso credenciales sin datos", ContractOpInput{Type: OpTransfer, Date: end, AreaID: u1, Position: "QA", Schedule: "L-V", Indefinite: true, ModifyCredentials: true}, "VALIDATION"},
-		{"traspaso correo inválido", ContractOpInput{Type: OpTransfer, Date: end, AreaID: u1, Position: "QA", Schedule: "L-V", Indefinite: true, ModifyCredentials: true, NewEmail: "no-es-correo"}, "VALIDATION"},
-		{"traspaso a la misma área", ContractOpInput{Type: OpTransfer, Date: end, AreaID: uArea, Position: "QA", Schedule: "L-V", Indefinite: true}, "TRANSFER_SAME_AREA"},
-		{"traspaso remuneración en cero", ContractOpInput{Type: OpTransfer, Date: end, AreaID: u1, Position: "QA", Schedule: "L-V", Indefinite: true, Pay: &Pay{}}, "PAY_REQUIRED"},
-		{"traspaso sede inválida", ContractOpInput{Type: OpTransfer, Date: end, AreaID: u1, Position: "QA", Schedule: "L-V", Indefinite: true, SiteID: "x"}, "VALIDATION"},
-		{"traspaso con remuneración", ContractOpInput{Type: OpTransfer, Date: end, AreaID: u1, Position: "QA", Schedule: "L-V", Indefinite: true, Pay: &Pay{Base: 4200.5}, CurrencyID: u1}, ""},
+		{"movimiento sin cambios", ContractOpInput{Type: OpMovement, Date: end, Reason: "x"}, "MOVEMENT_NO_CHANGE"},
+		{"movimiento sin motivo", ContractOpInput{Type: OpMovement, Date: end, ChangePosition: true, Position: "Analista"}, "REASON_REQUIRED"},
+		{"movimiento a la misma área", ContractOpInput{Type: OpMovement, Date: end, Reason: "x", ChangeArea: true, AreaID: uArea}, "TRANSFER_SAME_AREA"},
+		{"movimiento mismo cargo", ContractOpInput{Type: OpMovement, Date: end, Reason: "x", ChangePosition: true, Position: "QA"}, "MOVEMENT_NO_CHANGE"},
+		{"movimiento remuneración en cero", ContractOpInput{Type: OpMovement, Date: end, Reason: "x", ChangePay: true, Pay: &Pay{}}, "PAY_REQUIRED"},
+		{"movimiento fin antes de la fecha efectiva", ContractOpInput{Type: OpMovement, Date: end, Reason: "x", ChangeEndDate: true, EndDate: end}, "CONTRACT_DATE_INVALID"},
+		{"movimiento sede inválida", ContractOpInput{Type: OpMovement, Date: end, Reason: "x", ChangeWorkplace: true, SiteID: "x"}, "VALIDATION"},
+		{"movimiento credenciales sin datos", ContractOpInput{Type: OpMovement, Date: end, Reason: "x", ChangePosition: true, Position: "Analista", ModifyCredentials: true}, "VALIDATION"},
+		{"movimiento área y sueldo", ContractOpInput{Type: OpMovement, Date: end, Reason: "x", ChangeArea: true, AreaID: u1, ChangePay: true, Pay: &Pay{Base: 4200.5}, CurrencyID: u1}, ""},
+		{"traspaso (compatibilidad)", ContractOpInput{Type: OpTransfer, Date: end, AreaID: u1, Position: "QA", Schedule: "L-V"}, ""},
 		{"cambio de RQ sin RQ", ContractOpInput{Type: OpRQChange, Date: end}, "VALIDATION"},
 		{"cambio de RQ con 11 RQ", ContractOpInput{Type: OpRQChange, Date: end, RequirementIDs: elevenIDs()}, "VALIDATION"},
 		{"cambio de RQ ok", ContractOpInput{Type: OpRQChange, Date: end, RequirementID: u1}, ""},
@@ -106,21 +108,25 @@ func TestContractOpValidate(t *testing.T) {
 	}
 	for _, c := range cases {
 		in := c.in
-		if got := code(in.validate(start, end, uArea)); got != c.want {
+		if got := code(in.validate(cur)); got != c.want {
 			t.Errorf("%s: %q, se esperaba %q", c.name, got, c.want)
 		}
 	}
 	in := ContractOpInput{Type: "renew", EndDate: "2027-06-30", Reason: " Extensión ", Position: "x", AreaID: u1}
-	if err := in.validate(start, end, uArea); err != nil || in.Type != OpRenew || in.Reason != "Extensión" || in.Position != "" || in.AreaID != "" {
+	if err := in.validate(cur); err != nil || in.Type != OpRenew || in.Reason != "Extensión" || in.Position != "" || in.AreaID != "" {
 		t.Fatalf("renovar deja solo lo suyo: %+v %v", in, err)
 	}
 	rqm := ContractOpInput{Type: OpRQChange, Date: end, RequirementID: u1, RequirementIDs: []string{uArea, u1}}
-	if err := rqm.validate(start, end, uArea); err != nil || strings.Join(rqm.RequirementIDs, ",") != u1+","+uArea || rqm.RequirementID != "" {
+	if err := rqm.validate(cur); err != nil || strings.Join(rqm.RequirementIDs, ",") != u1+","+uArea || rqm.RequirementID != "" {
 		t.Fatalf("cambio de RQ múltiple: %+v %v", rqm, err)
 	}
-	tr := ContractOpInput{Type: OpTransfer, Date: end, AreaID: u1, Position: "QA", Schedule: "L-V", Indefinite: true, EndDate: "2027-01-01", NewUsername: "x"}
-	if err := tr.validate(start, end, uArea); err != nil || tr.EndDate != "" || tr.NewUsername != "" {
-		t.Fatalf("traspaso indeterminado sin credenciales: %+v %v", tr, err)
+	tr := ContractOpInput{Type: OpMovement, Date: end, Reason: "x", ChangeArea: true, AreaID: u1, Position: "Otro", Schedule: "x", NewUsername: "x", ChangeEndDate: true, Indefinite: true}
+	if err := tr.validate(cur); err != nil || tr.Position != "" || tr.NewUsername != "" || !tr.Indefinite || tr.AreaID != u1 {
+		t.Fatalf("movimiento deja solo lo marcado: %+v %v", tr, err)
+	}
+	lg := ContractOpInput{Type: OpTransfer, Date: end, AreaID: u1, Position: "QA", Schedule: "L-V 9-6", Indefinite: true}
+	if err := lg.validate(cur); err != nil || lg.Type != OpMovement || !lg.ChangeArea || lg.ChangePosition || !lg.ChangeEndDate || lg.Reason != "Traspaso de área" {
+		t.Fatalf("traspaso convertido en movimiento: %+v %v", lg, err)
 	}
 }
 
@@ -170,7 +176,7 @@ func TestContractRecipients(t *testing.T) {
 	if got := opForms(&contractOpData{Type: OpRQChange}); strings.Join(got, ",") != "FMI,NOTICE" {
 		t.Fatalf("cambio de RQ: %v", got)
 	}
-	if got := opForms(&contractOpData{Type: OpTransfer, Input: ContractOpInput{ModifyCredentials: true}}); strings.Join(got, ",") != "FMI,USERS" {
+	if got := opForms(&contractOpData{Type: OpMovement, Input: ContractOpInput{ModifyCredentials: true}}); strings.Join(got, ",") != "FMI,USERS" {
 		t.Fatalf("traspaso con credenciales: %v", got)
 	}
 }
@@ -205,7 +211,7 @@ func TestTerminationMails(t *testing.T) {
 		!strings.Contains(html, ">RQ-000301<") || !strings.Contains(html, ">BCP<") {
 		t.Fatalf("aviso de cambio de RQ: %s\n%s", subj, html)
 	}
-	tr := &contractOpData{Type: OpTransfer, Input: ContractOpInput{Date: "2027-01-01", Position: "Analista", Schedule: "L-V", ModifyCredentials: true, NewEmail: "ana@interbank.pe"},
+	tr := &contractOpData{Type: OpMovement, Changed: []string{"AREA", "POSITION"}, Input: ContractOpInput{Date: "2027-01-01", Reason: "Reorganización", ChangeArea: true, ChangePosition: true, Position: "Analista", ModifyCredentials: true, NewEmail: "ana@interbank.pe"},
 		Before: op.Before, Labels: opLabels{Area: "Operaciones"}, Users: op.Users}
 	if subj, _, _ := buildContractMail("FMI", "TRANSFERRED", tr, c, ""); subj != "Traspaso de área | RQ-000208 | BANBIF" {
 		t.Fatalf("traspaso: %s", subj)
@@ -235,12 +241,13 @@ func TestTerminationPDF(t *testing.T) {
 		!strings.Contains(us.Users.DeactReason, "31/12/2026") {
 		t.Fatalf("baja de credenciales: %+v", us.Users)
 	}
-	tr := &contractOpData{Type: OpTransfer, Input: ContractOpInput{Date: "2027-01-01", Position: "Analista", Schedule: "L-V 8-5", EndDate: "2027-06-30"},
+	tr := &contractOpData{Type: OpMovement, Input: ContractOpInput{Date: "2027-01-01", Reason: "Reorganización", ChangeArea: true, ChangePosition: true, Position: "Analista",
+		ChangeSchedule: true, Schedule: "L-V 8-5", ChangeWorkplace: true, ChangeEndDate: true, EndDate: "2027-06-30", ChangePay: true},
 		Before: op.Before, Labels: opLabels{Area: "Operaciones", Site: "Sede Miraflores", Currency: "PEN"},
 		PayEnc: "x", newPay: &Pay{Base: 4200}}
 	mv := contractPrint("FMI", c, tr)
-	if mv.FMI.MoveSite != "Sede Miraflores" || mv.FMI.MoveBase != "S/.4,200.00" || !mv.FMI.MoveHasBase || mv.FMI.MoveClient != "" || mv.FMI.MovePosition != "Analista" || mv.FMI.MoveArea != "Operaciones" || mv.FMI.MoveDate != "01/01/2027" ||
-		!strings.Contains(mv.FMI.Notes, "30/06/2027") {
+	if mv.FMI.MoveSite != "— → Sede Miraflores" || mv.FMI.MoveBase != "S/.4,200.00" || !mv.FMI.MoveHasBase || mv.FMI.MoveClient != "" || mv.FMI.MovePosition != "Asistente de Compras → Analista" || mv.FMI.MoveArea != "TI → Operaciones" || mv.FMI.MoveDate != "01/01/2027" ||
+		mv.FMI.MoveEnd != "31/12/2026 → 30/06/2027" || !strings.Contains(mv.FMI.Notes, "Reorganización") {
 		t.Fatalf("FMI de movimiento: %+v", mv.FMI)
 	}
 	for name, pr := range map[string]ports.FormPrint{"FMI_baja": fmi, "USERS_baja": us, "FMI_traspaso": mv} {
@@ -309,5 +316,30 @@ func TestScheduledTerminationMails(t *testing.T) {
 	}
 	if got := pendingForms(nil, true, false); strings.Join(got, ",") != "FMI,EQUIPMENT" {
 		t.Fatalf("reingreso con equipo: %v", got)
+	}
+}
+
+func TestMovementMail(t *testing.T) {
+	c := mailCtx()
+	op := &contractOpData{Type: OpMovement, Scheduled: true, Changed: []string{"AREA", "PAY"},
+		Input:  ContractOpInput{Date: "2027-02-01", Reason: "Ascenso", ChangeArea: true, ChangePay: true},
+		Before: contractSnapshot{Client: "BANBIF", Area: "TI", Position: "QA", Currency: "PEN", RQ: "RQ-000208"},
+		Labels: opLabels{Area: "Operaciones", Currency: "PEN"}, beforePay: &Pay{Base: 3500}, newPay: &Pay{Base: 4200, Mobility: 300}}
+	subj, html, _ := buildContractMail("FMI", "MOVED", op, c, "Fiorella")
+	if subj != "Traspaso de área | RQ-000208 | BANBIF" || !strings.Contains(html, "Movimiento programado: se aplica el 01/02/2027.") ||
+		!strings.Contains(html, ">S/.3,500.00<") || !strings.Contains(html, "S/.4,200.00 + movilidad S/.300.00") || !strings.Contains(html, ">Operaciones<") ||
+		!strings.Contains(html, "Motivo: Ascenso") {
+		t.Fatalf("movimiento: %s\n%s", subj, html)
+	}
+	op.Changed, op.Input.ChangeArea = []string{"PAY"}, false
+	if subj, _, _ := buildContractMail("FMI", "MOVED", op, c, ""); subj != "Movimiento de personal | RQ-000208 | BANBIF" {
+		t.Fatalf("cambio de sueldo: %s", subj)
+	}
+	op.change = &opChange{From: "2027-02-01", Reason: "Se postergó"}
+	if subj, html, _ := buildContractMail("FMI", "OP_CANCELLED", op, c, ""); subj != "Anulado - Movimiento de personal | RQ-000208 | BANBIF" || !strings.Contains(html, "el movimiento programado") {
+		t.Fatalf("anulación del movimiento: %s\n%s", subj, html)
+	}
+	if got := opForms(op); strings.Join(got, ",") != "FMI" {
+		t.Fatalf("documentos del movimiento: %v", got)
 	}
 }

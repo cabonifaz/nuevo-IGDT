@@ -123,7 +123,11 @@ func buildContractMail(form, reason string, op *contractOpData, c *formContext, 
 	}
 	changeNote := func() {
 		if ch := op.change; ch != nil && reason == "RESCHEDULED" {
-			m.strong(fmt.Sprintf("Se cambió la fecha de cese del %s al %s. Motivo: %s. Este correo reemplaza al enviado anteriormente.",
+			what := "de cese"
+			if op.Type == OpMovement {
+				what = "del movimiento"
+			}
+			m.strong(fmt.Sprintf("Se cambió la fecha "+what+" del %s al %s. Motivo: %s. Este correo reemplaza al enviado anteriormente.",
 				fmtDate(ch.From), fmtDate(ch.To), ch.Reason), "#B54708")
 		}
 	}
@@ -131,10 +135,18 @@ func buildContractMail(form, reason string, op *contractOpData, c *formContext, 
 		if op.Type == OpTerminate && op.Scheduled {
 			m.strong(fmt.Sprintf("Baja programada: se hace efectiva el %s.", fmtDate(in.Date)), "")
 		}
+		if op.Type == OpMovement && op.Scheduled {
+			m.strong(fmt.Sprintf("Movimiento programado: se aplica el %s.", fmtDate(in.Date)), "")
+		}
 	}
 	// baja programada anulada: aviso corto a los mismos destinatarios
 	if reason == "OP_CANCELLED" {
 		what := map[string]string{"FMI": "Baja de colaborador", "USERS": "Solicitud de baja de credenciales", "RECOVERY": "Solicitud de recuperación de equipo"}[form]
+		kind, col := "la baja programada", "Cese Anulado"
+		if op.Type == OpMovement {
+			what = map[string]string{"FMI": "Movimiento de personal", "USERS": "Solicitud de modificación de usuario"}[form]
+			kind, col = "el movimiento programado", "Movimiento Anulado"
+		}
 		subject = fmt.Sprintf("%s%s | %s | %s", prefix, what, rq, client)
 		from, why := in.Date, ""
 		if op.change != nil {
@@ -145,9 +157,13 @@ func buildContractMail(form, reason string, op *contractOpData, c *formContext, 
 		} else {
 			supportHead()
 		}
-		m.strong(fmt.Sprintf("Se anuló la baja programada de %s (cese previsto el %s). Motivo: %s.", name, fmtDate(from), why), "#B42318")
-		m.p("No es necesario atender la solicitud enviada anteriormente; el colaborador continúa en el servicio.")
-		m.table([]string{"Nombres", "Apellidos", "Doc. Identidad", "Cargo", "Cliente", "Cese Anulado"}, [][]string{{first, last, doc, b.Position, client, fmtDate(from)}})
+		m.strong(fmt.Sprintf("Se anuló %s de %s (previsto el %s). Motivo: %s.", kind, name, fmtDate(from), why), "#B42318")
+		if op.Type == OpMovement {
+			m.p("No es necesario atender la solicitud enviada anteriormente; el contrato sigue como estaba.")
+		} else {
+			m.p("No es necesario atender la solicitud enviada anteriormente; el colaborador continúa en el servicio.")
+		}
+		m.table([]string{"Nombres", "Apellidos", "Doc. Identidad", "Cargo", "Cliente", col}, [][]string{{first, last, doc, b.Position, client, fmtDate(from)}})
 		if form == "FMI" {
 			htmlBody, text = m.closeFMI()
 		} else {
@@ -185,26 +201,24 @@ func buildContractMail(form, reason string, op *contractOpData, c *formContext, 
 			if in.Reason != "" {
 				m.p("Observaciones: " + in.Reason)
 			}
-		case OpTransfer:
-			subject = fmt.Sprintf("%sTraspaso de área | %s | %s", prefix, rq, client)
-			m.p(fmt.Sprintf("Comunicarte el traspaso de %s del área %s al área %s en el equipo %s a partir del %s.", name, b.Area, op.Labels.Area, client, fmtDate(in.Date)))
-			m.p("Adjunto el Formulario de Movimiento (FMI) con la sección de movimiento.")
-			site := op.Labels.Site
-			if site == "" {
-				site = b.Site
+		case OpMovement:
+			subject = fmt.Sprintf("%sMovimiento de personal | %s | %s", prefix, rq, client)
+			if contains(op.Changed, "AREA") {
+				subject = fmt.Sprintf("%sTraspaso de área | %s | %s", prefix, rq, client)
 			}
-			payText := "Sin cambio"
-			if op.PayEnc != "" {
-				payText = "Actualizada (ver FMI)"
+			m.p(fmt.Sprintf("Comunicarte el movimiento de %s en el equipo %s a partir del %s.", name, client, fmtDate(in.Date)))
+			scheduled()
+			m.p("Adjunto el Formulario de Movimiento (FMI) con la sección de movimiento (valores anteriores y nuevos).")
+			rows := [][]string{}
+			for _, r := range movementRows(op) {
+				rows = append(rows, []string{r[0], r[1], r[2]})
 			}
-			m.table([]string{"Item", "Nombres", "Apellidos", "Doc. Identidad", "Área Actual", "Nueva Área", "Cargo", "Jornada", "Sede", "Remuneración", "Inicio del Movimiento", "Término de Contrato"},
-				[][]string{{"1", first, last, doc, b.Area, op.Labels.Area, in.Position, in.Schedule, orDash(site), payText, fmtDate(in.Date), endText(in.EndDate)}})
+			m.table([]string{"Concepto", "Anterior", "Nuevo"}, rows)
+			m.table([]string{"Nombres", "Apellidos", "Doc. Identidad", "Inicio del Movimiento"}, [][]string{{first, last, doc, fmtDate(in.Date)}})
 			if in.ModifyCredentials {
 				m.p("Se solicitó a Soporte la modificación de las credenciales del colaborador.")
 			}
-			if in.Reason != "" {
-				m.p("Observaciones: " + in.Reason)
-			}
+			m.p("Motivo: " + in.Reason)
 		case OpRQChange:
 			codes := op.rqCodes()
 			subject = fmt.Sprintf("%sCambio de requerimiento | %s → %s | %s", prefix, rq, codes, client)
@@ -232,9 +246,10 @@ func buildContractMail(form, reason string, op *contractOpData, c *formContext, 
 		if op.Users != nil {
 			user, email = op.Users.Username, op.Users.Email
 		}
-		if op.Type == OpTransfer {
+		if op.Type == OpMovement || op.Type == OpTransfer {
 			subject = fmt.Sprintf("%sSolicitud de modificación de usuario: %s - %s", prefix, client, rq)
-			m.p(fmt.Sprintf("Favor atender la modificación de las credenciales de %s por su traspaso al área %s a partir del %s.", name, op.Labels.Area, fmtDate(in.Date)))
+			m.p(fmt.Sprintf("Favor atender la modificación de las credenciales de %s por su movimiento a partir del %s.", name, fmtDate(in.Date)))
+			scheduled()
 			m.table([]string{"Item", "Nombres", "Apellidos", "Usuario Actual", "Nuevo Usuario", "Correo Actual", "Nuevo Correo"},
 				[][]string{{"1", first, last, orDash(user), orDash(in.NewUsername), orDash(email), orDash(in.NewEmail)}})
 		} else {
@@ -282,4 +297,56 @@ func rqList(op *contractOpData) string {
 		out = append(out, strings.TrimSpace(fmt.Sprintf("%s %s (%s)", r.Code, dashed(r.Title), orDash(r.Client))))
 	}
 	return strings.Join(out, ", ")
+}
+
+// movementRows: concepto, valor anterior y nuevo de cada cambio del movimiento (la remuneración, solo si se puede ver).
+func movementRows(op *contractOpData) [][3]string {
+	in, b := op.Input, op.Before
+	out := [][3]string{}
+	if in.ChangeArea {
+		out = append(out, [3]string{"Área", orDash(b.Area), orDash(op.Labels.Area)})
+	}
+	if in.ChangePosition {
+		out = append(out, [3]string{"Cargo", orDash(b.Position), orDash(in.Position)})
+	}
+	if in.ChangeSchedule {
+		out = append(out, [3]string{"Jornada", orDash(b.Schedule), orDash(in.Schedule)})
+	}
+	if in.ChangeWorkplace {
+		out = append(out, [3]string{"Sede", orDash(b.Site), orDash(op.Labels.Site)},
+			[3]string{"Lugar de trabajo", orDash(b.Location), orDash(in.Location)},
+			[3]string{"Proyecto / servicio", orDash(b.Project), orDash(in.ProjectService)})
+	}
+	if in.ChangeEndDate {
+		out = append(out, [3]string{"Fecha de fin", endText(b.EndDate), endText(in.EndDate)})
+	}
+	if in.ChangePay {
+		before, after := "Reservado", "Reservado"
+		if op.beforePay != nil {
+			before = payLine(op.beforePay, currencySymbol(b.Currency))
+		}
+		if op.newPay != nil {
+			after = payLine(op.newPay, currencySymbol(op.Labels.Currency))
+		}
+		out = append(out, [3]string{"Remuneración", before, after})
+	}
+	return out
+}
+
+// payLine: «S/.3,500.00 (+ movilidad S/.200.00)» u honorario.
+func payLine(p *Pay, sym string) string {
+	if p.Fee > 0 && p.Base == 0 {
+		return amount(sym, p.Fee)
+	}
+	parts := []string{amount(sym, p.Base)}
+	if p.Mobility > 0 {
+		parts = append(parts, "movilidad "+amount(sym, p.Mobility))
+	}
+	if p.Quarterly > 0 {
+		parts = append(parts, "bono trimestral "+amount(sym, p.Quarterly))
+	}
+	if p.Semiannual > 0 {
+		parts = append(parts, "bono semestral "+amount(sym, p.Semiannual))
+	}
+	return strings.Join(parts, " + ")
 }

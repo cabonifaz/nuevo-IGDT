@@ -428,6 +428,9 @@ func (c *doc) fmi(f ports.FMIPrint) {
 	if f.MoveProject != "" {
 		row("Cambio de proyecto / servicio", f.MoveProject)
 	}
+	if f.MoveEnd != "" {
+		row("Cambio de fecha de fin", f.MoveEnd)
+	}
 	row("F. Inicio de movimiento", f.MoveDate)
 	y += gap
 	section("Cese")
