@@ -42,6 +42,12 @@ func (s *SelectionService) reminderTick(ctx context.Context) {
 	if now.Hour() < reminderHour {
 		return
 	}
+	// bajas programadas cuya fecha de cese llegó (idempotente: cada operación se aplica una sola vez aunque corran varias instancias)
+	if n, err := s.ApplyScheduledTerminations(ctx, now); err != nil {
+		slog.Warn("bajas programadas: no se pudieron aplicar", "err", err)
+	} else if n > 0 {
+		slog.Info("bajas programadas aplicadas", "count", n)
+	}
 	tenants, err := s.Repo.HireReminderTenants(ctx)
 	if err != nil {
 		slog.Warn("recordatorios: no se pudieron leer los tenants", "err", err)
@@ -99,6 +105,7 @@ func (s *SelectionService) remind(ctx context.Context, t ports.ReminderTenant, n
 			Requirement string                 `json:"requirement"`
 			StartDate   string                 `json:"startDate"`
 			EquipReq    bool                   `json:"equipmentRequired"`
+			Credential  any                    `json:"credential"`
 			Approved    []string               `json:"approved"`
 			Client      struct{ Label string } `json:"client"`
 			Talent      struct {
@@ -113,7 +120,7 @@ func (s *SelectionService) remind(ctx context.Context, t ports.ReminderTenant, n
 		}
 		it := HireAlertItem{ID: x.ID, Talent: strings.Join(nonEmpty([]string{x.Talent.FirstName, x.Talent.LastName, x.Talent.SecondLastName}), " "),
 			Client: x.Client.Label, RQ: x.Requirement, StartDate: dateOnly(x.StartDate), Due: dueState(x.StartDate, now),
-			Pending: pendingForms(x.Approved, x.EquipReq), ReceivedAt: x.ReceivedAt}
+			Pending: pendingForms(x.Approved, x.EquipReq, x.Credential == nil), ReceivedAt: x.ReceivedAt}
 		if len(x.Managers) > 0 {
 			addTo(x.Managers, it)
 		} else {

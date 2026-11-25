@@ -367,11 +367,12 @@ type HireAlerts struct {
 	Items   []HireAlertItem `json:"items"`
 }
 
-// pendingForms: fichas por aprobar según lo aprobado y si lleva solicitud de equipo.
-func pendingForms(approved []string, equipmentRequired bool) []string {
+// pendingForms: fichas por aprobar según lo aprobado, si lleva solicitud de equipo y si requiere la de usuarios (no la
+// requiere si el talento ya tiene credenciales activas).
+func pendingForms(approved []string, equipmentRequired, usersRequired bool) []string {
 	out := []string{}
 	for _, f := range []string{"FMI", "USERS", "EQUIPMENT"} {
-		if f == "EQUIPMENT" && !equipmentRequired {
+		if (f == "EQUIPMENT" && !equipmentRequired) || (f == "USERS" && !usersRequired) {
 			continue
 		}
 		if !contains(approved, f) {
@@ -401,6 +402,7 @@ func (s *SelectionService) Alerts(ctx context.Context, p *domain.Principal) (*Hi
 			StartDate   string `json:"startDate"`
 			ReceivedAt  string `json:"receivedAt"`
 			EquipReq    bool   `json:"equipmentRequired"`
+			Credential  any    `json:"credential"`
 			Requirement struct {
 				Code string `json:"code"`
 			} `json:"requirement"`
@@ -425,7 +427,7 @@ func (s *SelectionService) Alerts(ctx context.Context, p *domain.Principal) (*Hi
 		}
 		it := HireAlertItem{ID: x.ID, Talent: strings.Join(nonEmpty([]string{x.Talent.FirstName, x.Talent.LastName, x.Talent.SecondLastName}), " "),
 			Client: x.Client.Label, RQ: x.Requirement.Code, StartDate: dateOnly(x.StartDate), Due: dueState(x.StartDate, today),
-			Pending: pendingForms(approved, x.EquipReq), ReceivedAt: x.ReceivedAt}
+			Pending: pendingForms(approved, x.EquipReq, x.Credential == nil), ReceivedAt: x.ReceivedAt}
 		out.Pending++
 		switch it.Due {
 		case "OVERDUE":

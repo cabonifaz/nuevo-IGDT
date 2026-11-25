@@ -44,7 +44,9 @@ type HireFormsRepository interface {
 	UserSignatureClear(ctx context.Context, m Meta) error
 	UserSignature(ctx context.Context, tenantID, actorID uint64, userUUID string) (key, mime string, err error)
 	HireFormDispatchAdd(ctx context.Context, actorID, tenantID uint64, requestID, form, reason string, recipients []string, status, errText string) error
-	HireContractOp(ctx context.Context, m Meta, tenantID uint64, in ContractOpWrite) (string, error)
+	HireContractOp(ctx context.Context, m Meta, tenantID uint64, in ContractOpWrite) (id, status string, err error)
+	HireContractOpChange(ctx context.Context, m Meta, tenantID uint64, requestID, opID, action, date, reason, today string) (string, error)
+	ContractApplyScheduled(ctx context.Context, today time.Time) (int, error)
 	HireContract(ctx context.Context, m Meta, tenantID uint64, requestID string) (json.RawMessage, error)
 	HireContractOpGet(ctx context.Context, m Meta, tenantID uint64, requestID, opID string) (json.RawMessage, error)
 	HireContractAssertManager(ctx context.Context, m Meta, tenantID uint64, requestID string) error
@@ -87,6 +89,9 @@ type FMIPrint struct {
 	Compact                                            bool // fin de contrato: filas más compactas para que quepa en una hoja
 	// Movimiento y cese (fin de contrato); "" = en blanco. Recover: equipo a recuperar ("" = no aplica).
 	MoveClient, MovePosition, MoveArea, MoveSchedule, MoveDate string
+	MoveSite, MoveProject                                      string // traspaso: sede y proyecto (filas solo si cambian)
+	MoveBase, MoveMobility, MoveBonus                          string // cambio de estructura salarial
+	MoveHasBase, MoveHasMobility, MoveQuarterly                bool
 	TermReason, TermDate, ReturnDate, Recover                  string
 }
 
@@ -206,14 +211,19 @@ type ClientManagerRef struct {
 }
 
 // ContractOpWrite: operación de fin de contrato ya validada por la API (RENEW | TERMINATE | TRANSFER | RQ_CHANGE).
-// Date: cese, movimiento o salida; EndDate: nueva fecha de fin (renovar o traspaso; "" en traspaso = indeterminado).
+// Date: cese, movimiento o salida; EndDate: nueva fecha de fin (renovar o traspaso; "" en traspaso = indeterminado);
+// Today: hoy en Lima (una baja con fecha posterior queda programada). Traspaso de área: AreaID, Position, Schedule,
+// SiteID, Location, Project, CurrencyID y PayEnc (nil = sin cambio). RQIDs: RQ destino del cambio de RQ.
 // Data: entradas, etiquetas y la foto del contrato antes del cambio; Changes: [{"field","from","to"}] para el historial.
 type ContractOpWrite struct {
-	RequestID, OpID, Type, Date, EndDate       string
-	TerminationReasonID                        string
-	Recover                                    bool
-	ReturnDate                                 string
-	ClientID, AreaID, Position, Schedule, RQID string
-	Reason                                     string
-	Data, Changes                              json.RawMessage
+	RequestID, OpID, Type, Date, EndDate, Today string
+	TerminationReasonID                         string
+	Recover                                     bool
+	ReturnDate                                  string
+	AreaID, Position, Schedule, SiteID          string
+	Location, Project, CurrencyID               string
+	PayEnc                                      []byte
+	RQIDs                                       []string
+	Reason                                      string
+	Data, Changes                               json.RawMessage
 }

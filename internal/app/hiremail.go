@@ -32,7 +32,8 @@ func (s *SelectionService) formContextFor(ctx context.Context, p *domain.Princip
 	if err != nil {
 		return nil, err
 	}
-	if form != "FMI" && a != nil && a.SignerID != "" {
+	// firma quien aprobó (o corrigió por última vez) esa ficha; en la FMI, su aprobación (no las operaciones posteriores)
+	if a != nil && a.SignerID != "" {
 		if a.SignerName != "" {
 			c.manager = a.SignerName
 		}

@@ -70,3 +70,41 @@ func (s *Server) selContractResend(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusAccepted)
 }
+
+// PATCH /tenant/hire-requests/{id}/contract-ops/{opId} {action: RESCHEDULE|CANCEL, date, reason} — cambia la fecha o anula
+// una baja programada (se avisa a los mismos destinatarios). Devuelve el estado final de la operación.
+func (s *Server) selContractOpChange(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Action string `json:"action"`
+		Date   string `json:"date"`
+		Reason string `json:"reason"`
+	}
+	if err := decode(w, r, &in); err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	st, err := s.Selection.ChangeScheduledOp(r.Context(), principal(r), s.clientIP(r), chi.URLParam(r, "id"), chi.URLParam(r, "opId"), in.Action, in.Date, in.Reason)
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": st})
+}
+
+// POST /platform/jobs/scheduled-terminations {date?} — ejecuta la rutina de bajas programadas (Super Admin). La fecha
+// simulada solo se acepta fuera de producción (pruebas controladas).
+func (s *Server) platformRunScheduledTerminations(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Date string `json:"date"`
+	}
+	if err := decode(w, r, &in); err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	n, err := s.Selection.RunScheduledJob(r.Context(), in.Date)
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"applied": n})
+}

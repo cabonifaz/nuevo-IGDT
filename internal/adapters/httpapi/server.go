@@ -130,6 +130,7 @@ func (s *Server) Handler() http.Handler {
 				r.With(s.requirePerm("platform.audit.read")).Get("/audit", s.listAudit)
 				r.Group(s.notificationRoutes)
 				r.Group(s.featureRoutes)
+				r.Post("/jobs/scheduled-terminations", s.platformRunScheduledTerminations)
 				r.Get("/versions/environments", s.versionEnvironments)
 				r.With(s.requirePerm("platform.releases.manage")).Patch("/versions/{version}", s.versionStatus)
 			})

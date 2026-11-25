@@ -3,6 +3,13 @@
 Formato: `## vMAYOR.MENOR — AAAA-MM-DD`, seguido de los cambios en viñetas (español). Al publicar una versión se
 sube `VERSION` y se agrega su sección aquí: la API la registra al desplegarse en cada ambiente y la notifica.
 
+## v0.14 — 2026-11-25
+- Baja programada: si la fecha de cese es futura, el contrato sigue vigente y pasa a baja solo ese día (rutina diaria desde las 8:00); BDT se entera cuando se hace efectiva. Los correos (FMI de baja, baja de credenciales y recuperación de equipo) salen al confirmar con la fecha efectiva. Mientras está programada se puede cambiar la fecha o anular, con motivo y aviso a los mismos destinatarios. Colaboradores y la solicitud muestran «Baja programada para el …» y las alertas dejan de pedir acción.
+- Traspaso: ahora es un cambio de área dentro del mismo cliente y permite cambiar cargo, jornada, sede, lugar de trabajo, proyecto, fecha de fin, remuneración (solo quien puede ver remuneraciones) y observaciones; la FMI refleja los cambios en la sección de movimiento.
+- Cambio a otro RQ: se pueden elegir varios RQ abiertos de BDT; el aviso a Selección y el evento para BDT los incluyen todos.
+- Credenciales por colaborador (usuario de red y correo: activas, baja solicitada o desactivadas). En un ingreso, la ficha de usuarios solo se pide si el talento no tiene credenciales activas; si ya las tiene (reingreso o colaborador vigente) queda «No aplica» con su usuario y correo, y la solicitud se completa sin ella.
+- Firma: cada PDF lo firma quien aprobó ese documento (la FMI, quien la aprobó o corrigió por última vez; usuarios y equipo, su aprobador; los documentos de una operación de fin de contrato, quien la confirmó).
+
 ## v0.13 — 2026-11-25
 - Fin de contrato: los contratos vigentes que terminan pronto se alertan a sus gestores (los del cliente, el gestor dirigido o, si el cliente no tiene gestores, los administradores) con niveles aviso, recordatorio, crítico y vencido según los días de aviso de la empresa (por defecto 30, 15 y 7; se configuran en Administración › Fichas de ingreso). Aparecen en la alerta destacada, en el aviso diario de las notificaciones y en el correo de recordatorio cada 2 o 3 días.
 - Asistente «Gestionar fin de contrato» desde la alerta, Colaboradores o la solicitud, con la guía de qué correos salen y a quién y la vista previa de cada PDF: renovar (nueva fecha de fin y FMI actualizada), baja (FMI con la sección de cese e indicación de recuperar la laptop o el equipo, baja de credenciales y recuperación de equipo a Soporte), traspaso a otro cliente, área o puesto (FMI con la sección de movimiento y, si se pide, modificación de credenciales) y cambio a otro RQ abierto de BDT (FMI de salida y aviso a Selección para gestionar el ingreso en BDT).

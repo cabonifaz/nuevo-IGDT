@@ -18,20 +18,54 @@ func contractDays(d []int) any {
 	return string(b)
 }
 
-func (r SelectionRepo) HireContractOp(ctx context.Context, m ports.Meta, tenantID uint64, in ports.ContractOpWrite) (string, error) {
+func (r SelectionRepo) HireContractOp(ctx context.Context, m ports.Meta, tenantID uint64, in ports.ContractOpWrite) (string, string, error) {
+	var rqs any
+	if len(in.RQIDs) > 0 {
+		b, _ := json.Marshal(in.RQIDs)
+		rqs = string(b)
+	}
 	rs, err := r.call(ctx, "sp_hire_contract_op", m.ActorID, tenantID, in.RequestID, in.OpID, in.Type, nullStr(in.Date), nullStr(in.EndDate),
-		nullStr(in.TerminationReasonID), in.Recover, nullStr(in.ReturnDate), nullStr(in.ClientID), nullStr(in.AreaID), nullStr(in.Position),
-		nullStr(in.Schedule), nullStr(in.RQID), nullStr(in.Reason), nullJSON(in.Data), nullJSON(in.Changes), nullStr(m.IP))
+		in.Today, nullStr(in.TerminationReasonID), in.Recover, nullStr(in.ReturnDate), nullStr(in.AreaID), nullStr(in.Position),
+		nullStr(in.Schedule), nullStr(in.SiteID), nullStr(in.Location), nullStr(in.Project), nullStr(in.CurrencyID), nullBytes(in.PayEnc),
+		rqs, nullStr(in.Reason), nullJSON(in.Data), nullJSON(in.Changes), nullStr(m.IP))
+	if err != nil {
+		return "", "", err
+	}
+	defer rs.Close()
+	var id, status string
+	rs.Next()
+	if err := rs.One(&id, &status); err != nil {
+		return "", "", err
+	}
+	return id, status, rs.Close()
+}
+
+func (r SelectionRepo) HireContractOpChange(ctx context.Context, m ports.Meta, tenantID uint64, requestID, opID, action, date, reason, today string) (string, error) {
+	rs, err := r.call(ctx, "sp_hire_contract_op_change", m.ActorID, tenantID, requestID, opID, action, nullStr(date), reason, today, nullStr(m.IP))
 	if err != nil {
 		return "", err
 	}
 	defer rs.Close()
-	var id string
+	var status string
 	rs.Next()
-	if err := rs.One(&id); err != nil {
+	if err := rs.One(&status); err != nil {
 		return "", err
 	}
-	return id, rs.Close()
+	return status, rs.Close()
+}
+
+func (r SelectionRepo) ContractApplyScheduled(ctx context.Context, today time.Time) (int, error) {
+	rs, err := r.call(ctx, "sp_contract_apply_scheduled", today.Format("2006-01-02"))
+	if err != nil {
+		return 0, err
+	}
+	defer rs.Close()
+	var n int
+	rs.Next()
+	if err := rs.One(&n); err != nil {
+		return 0, err
+	}
+	return n, rs.Close()
 }
 
 func (r SelectionRepo) HireContract(ctx context.Context, m ports.Meta, tenantID uint64, requestID string) (json.RawMessage, error) {

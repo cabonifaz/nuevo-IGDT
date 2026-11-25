@@ -26,6 +26,11 @@ BEGIN
          EXISTS (SELECT 1 FROM hire_form_approval WHERE hire_request_id = p_request_id AND form = 'USERS'),
          EXISTS (SELECT 1 FROM hire_form_approval WHERE hire_request_id = p_request_id AND form = 'EQUIPMENT')
     INTO v_fmi, v_users, v_equip;
+  -- la ficha de usuarios solo se exige si el talento no tiene credenciales activas (reingreso o colaborador vigente)
+  IF v_users = 0 THEN
+    SET v_users = EXISTS (SELECT 1 FROM employee_credential c JOIN employee e ON e.id = c.employee_id JOIN hire_request h ON h.id = p_request_id
+                           WHERE e.tenant_id = h.tenant_id AND e.talent_uuid = h.talent_uuid AND c.status = 'ACTIVE');
+  END IF;
   SELECT COALESCE(h.equipment_required,
                   IF(h.draft IS NOT NULL, IF(JSON_TYPE(JSON_EXTRACT(h.draft, '$.equipment')) IN ('OBJECT'), 1, 0), NULL),
                   IF(JSON_EXTRACT(h.doc, '$.conditions.laptop') = CAST('true' AS JSON), 1, 0))
@@ -56,7 +61,9 @@ BEGIN
   END IF;
   START TRANSACTION;
   SELECT id, hire_id INTO v_req, v_hire FROM hire_request WHERE tenant_id = p_tenant_id AND uuid = p_request_uuid FOR UPDATE;
-  IF p_form = 'EQUIPMENT' AND NOT EXISTS (SELECT 1 FROM hire_form_approval WHERE hire_request_id = v_req AND form = 'USERS') THEN
+  IF p_form = 'EQUIPMENT' AND NOT EXISTS (SELECT 1 FROM hire_form_approval WHERE hire_request_id = v_req AND form = 'USERS')
+     AND NOT EXISTS (SELECT 1 FROM employee_credential c JOIN employee e ON e.id = c.employee_id JOIN hire_request h ON h.id = v_req
+                      WHERE e.tenant_id = h.tenant_id AND e.talent_uuid = h.talent_uuid AND c.status = 'ACTIVE') THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'IGDT:HIRE_USERS_FIRST';
   END IF;
   SET v_first = NOT EXISTS (SELECT 1 FROM hire_form_approval WHERE hire_request_id = v_req AND form = p_form);
@@ -68,6 +75,7 @@ BEGIN
     IF p_form = 'EQUIPMENT' THEN UPDATE hire SET equipment_request = JSON_EXTRACT(p_data, '$.equipment') WHERE id = v_hire; END IF;
     IF p_form = 'EQUIPMENT' THEN CALL sp_employee_equipment_sync(v_hire, p_actor_id); END IF;
   END IF;
+  IF p_form = 'USERS' THEN CALL sp_employee_credential_sync(v_req, p_actor_id); END IF;
   UPDATE hire_request SET equipment_required = IFNULL(p_equipment_required, equipment_required),
          status = IF(status = 'PENDING', 'IN_PROGRESS', status),
          assigned_user_id = IFNULL(assigned_user_id, p_actor_id), taken_at = IFNULL(taken_at, NOW(3))
@@ -221,6 +229,9 @@ BEGIN
                                 IF(h.draft IS NOT NULL, IF(JSON_TYPE(JSON_EXTRACT(h.draft, '$.equipment')) = 'OBJECT', 1, 0), NULL),
                                 IF(JSON_EXTRACT(h.doc, '$.conditions.laptop') = CAST('true' AS JSON), 1, 0)) = 1,
            'approved', IFNULL((SELECT JSON_ARRAYAGG(a.form) FROM hire_form_approval a WHERE a.hire_request_id = h.id), JSON_ARRAY()),
+           'credential', (SELECT JSON_OBJECT('username', c.username, 'email', c.email) FROM employee_credential c JOIN employee ce ON ce.id = c.employee_id
+                          WHERE ce.tenant_id = h.tenant_id AND ce.talent_uuid = h.talent_uuid AND c.status = 'ACTIVE' AND NOT (c.hire_request_id <=> h.id)
+                          ORDER BY c.id DESC LIMIT 1),
            'managers', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('id', u.uuid, 'userId', u.id,
                                     'role', IFNULL((SELECT m.role FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid AND m.user_id = u.id LIMIT 1), 'DIRECTED'),
                                     'nameEnc', TO_BASE64(u.full_name_enc), 'emailEnc', TO_BASE64(u.email_enc), 'locale', u.locale))

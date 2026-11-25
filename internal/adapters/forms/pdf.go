@@ -415,13 +415,19 @@ func (c *doc) fmi(f ports.FMIPrint) {
 	row("[2] Sede a declarar", f.Site)
 	y += gap
 	section("Movimiento")
-	pay("Cambio de estructura salarial", "", "", "", false, false, false, false)
+	pay("Cambio de estructura salarial", f.MoveBase, f.MoveMobility, f.MoveBonus, f.MoveHasBase, f.MoveHasMobility, false, f.MoveQuarterly)
 	if f.MoveClient != "" { // traspaso a otro cliente (no está en el formato original: solo se imprime si aplica)
 		row("Cambio de cliente", f.MoveClient)
 	}
 	row("Cambio de puesto", f.MovePosition)
 	row("Cambio de área", f.MoveArea)
 	row("Cambio de jornada", f.MoveSchedule)
+	if f.MoveSite != "" {
+		row("Cambio de sede", f.MoveSite)
+	}
+	if f.MoveProject != "" {
+		row("Cambio de proyecto / servicio", f.MoveProject)
+	}
 	row("F. Inicio de movimiento", f.MoveDate)
 	y += gap
 	section("Cese")

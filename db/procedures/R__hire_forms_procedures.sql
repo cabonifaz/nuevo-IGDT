@@ -122,6 +122,10 @@ BEGIN
   -- el colaborador deja de estar activo si no tiene otro ingreso vigente
   UPDATE employee SET status = 'TERMINATED', updated_by = p_actor_id
    WHERE id = v_emp AND NOT EXISTS (SELECT 1 FROM hire WHERE employee_id = v_emp AND status = 'ACTIVE');
+  -- las credenciales que creó este ingreso se piden dar de baja
+  UPDATE employee_credential c JOIN hire x ON x.hire_request_id = c.hire_request_id
+     SET c.status = 'DEACTIVATION_REQUESTED', c.deactivation_requested_at = NOW(3), c.updated_by = p_actor_id
+   WHERE x.id = v_hire AND c.status = 'ACTIVE';
   INSERT INTO hire_change (tenant_id, hire_id, type, changes, reason, created_by)
   VALUES (p_tenant_id, v_hire, 'REVOKED', JSON_ARRAY(), TRIM(p_reason), p_actor_id);
   INSERT INTO hire_event (tenant_id, type, candidate_uuid, requirement_uuid, data)

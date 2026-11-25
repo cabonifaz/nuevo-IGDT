@@ -167,6 +167,9 @@ BEGIN
                                  STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(h.draft, '$.hire.startDate')), '%Y-%m-%d'),
                                  STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(h.doc, '$.conditions.startDate')), '%Y-%m-%d')),
            'directedTo', (SELECT JSON_OBJECT('id', du.uuid, 'nameEnc', TO_BASE64(du.full_name_enc)) FROM app_user du WHERE du.id = h.directed_user_id),
+           'credential', (SELECT JSON_OBJECT('username', c.username, 'email', c.email) FROM employee_credential c JOIN employee ce ON ce.id = c.employee_id
+                          WHERE ce.tenant_id = h.tenant_id AND ce.talent_uuid = h.talent_uuid AND c.status = 'ACTIVE' AND NOT (c.hire_request_id <=> h.id)
+                          ORDER BY c.id DESC LIMIT 1),
            'canAct', v_admin = 1 OR h.directed_user_id <=> p_actor_id OR NOT EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid)
                      OR EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid AND m.user_id = p_actor_id),
            'confirmedAt', h.confirmed_at, 'receivedAt', h.received_at, 'takenAt', h.taken_at, 'cancelledAt', h.cancelled_at,
@@ -215,6 +218,9 @@ BEGIN
                                  STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(h.draft, '$.hire.startDate')), '%Y-%m-%d'),
                                  STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(h.doc, '$.conditions.startDate')), '%Y-%m-%d')),
            'directedTo', (SELECT JSON_OBJECT('id', du.uuid, 'nameEnc', TO_BASE64(du.full_name_enc)) FROM app_user du WHERE du.id = h.directed_user_id),
+           'credential', (SELECT JSON_OBJECT('username', c.username, 'email', c.email) FROM employee_credential c JOIN employee ce ON ce.id = c.employee_id
+                          WHERE ce.tenant_id = h.tenant_id AND ce.talent_uuid = h.talent_uuid AND c.status = 'ACTIVE' AND NOT (c.hire_request_id <=> h.id)
+                          ORDER BY c.id DESC LIMIT 1),
            'canAct', v_admin = 1 OR h.directed_user_id <=> p_actor_id OR NOT EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid)
                      OR EXISTS (SELECT 1 FROM client_manager m WHERE m.tenant_id = h.tenant_id AND m.client_uuid = h.client_uuid AND m.user_id = p_actor_id),
            'dispatches', IFNULL((SELECT JSON_ARRAYAGG(JSON_OBJECT('form', d.form, 'reason', d.reason, 'recipients', d.recipients,

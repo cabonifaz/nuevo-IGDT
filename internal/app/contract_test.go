@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"fmt"
 	"errors"
 	"os"
 	"strings"
@@ -89,29 +90,48 @@ func TestContractOpValidate(t *testing.T) {
 		{"baja sin motivo", ContractOpInput{Type: OpTerminate, Date: end}, "VALIDATION"},
 		{"baja recuperar sin fecha", ContractOpInput{Type: OpTerminate, Date: end, TerminationReasonID: u1, RecoverEquipment: true}, "CONTRACT_DATE_INVALID"},
 		{"baja ok", ContractOpInput{Type: OpTerminate, Date: end, TerminationReasonID: u1, RecoverEquipment: true, EquipmentReturnDate: "2027-01-05"}, ""},
-		{"traspaso sin cargo", ContractOpInput{Type: OpTransfer, Date: end, ClientID: u1, AreaID: u1, Schedule: "L-V"}, "VALIDATION"},
-		{"traspaso fin antes del movimiento", ContractOpInput{Type: OpTransfer, Date: end, ClientID: u1, AreaID: u1, Position: "QA", Schedule: "L-V", EndDate: end}, "CONTRACT_DATE_INVALID"},
-		{"traspaso indeterminado", ContractOpInput{Type: OpTransfer, Date: end, ClientID: u1, AreaID: u1, Position: "QA", Schedule: "L-V", Indefinite: true, EndDate: "2020-01-01"}, ""},
-		{"traspaso credenciales sin datos", ContractOpInput{Type: OpTransfer, Date: end, ClientID: u1, AreaID: u1, Position: "QA", Schedule: "L-V", Indefinite: true, ModifyCredentials: true}, "VALIDATION"},
-		{"traspaso correo inválido", ContractOpInput{Type: OpTransfer, Date: end, ClientID: u1, AreaID: u1, Position: "QA", Schedule: "L-V", Indefinite: true, ModifyCredentials: true, NewEmail: "no-es-correo"}, "VALIDATION"},
+		{"traspaso sin cargo", ContractOpInput{Type: OpTransfer, Date: end, AreaID: u1, Schedule: "L-V"}, "VALIDATION"},
+		{"traspaso fin antes del movimiento", ContractOpInput{Type: OpTransfer, Date: end, AreaID: u1, Position: "QA", Schedule: "L-V", EndDate: end}, "CONTRACT_DATE_INVALID"},
+		{"traspaso indeterminado", ContractOpInput{Type: OpTransfer, Date: end, AreaID: u1, Position: "QA", Schedule: "L-V", Indefinite: true, EndDate: "2020-01-01"}, ""},
+		{"traspaso credenciales sin datos", ContractOpInput{Type: OpTransfer, Date: end, AreaID: u1, Position: "QA", Schedule: "L-V", Indefinite: true, ModifyCredentials: true}, "VALIDATION"},
+		{"traspaso correo inválido", ContractOpInput{Type: OpTransfer, Date: end, AreaID: u1, Position: "QA", Schedule: "L-V", Indefinite: true, ModifyCredentials: true, NewEmail: "no-es-correo"}, "VALIDATION"},
+		{"traspaso a la misma área", ContractOpInput{Type: OpTransfer, Date: end, AreaID: uArea, Position: "QA", Schedule: "L-V", Indefinite: true}, "TRANSFER_SAME_AREA"},
+		{"traspaso remuneración en cero", ContractOpInput{Type: OpTransfer, Date: end, AreaID: u1, Position: "QA", Schedule: "L-V", Indefinite: true, Pay: &Pay{}}, "PAY_REQUIRED"},
+		{"traspaso sede inválida", ContractOpInput{Type: OpTransfer, Date: end, AreaID: u1, Position: "QA", Schedule: "L-V", Indefinite: true, SiteID: "x"}, "VALIDATION"},
+		{"traspaso con remuneración", ContractOpInput{Type: OpTransfer, Date: end, AreaID: u1, Position: "QA", Schedule: "L-V", Indefinite: true, Pay: &Pay{Base: 4200.5}, CurrencyID: u1}, ""},
 		{"cambio de RQ sin RQ", ContractOpInput{Type: OpRQChange, Date: end}, "VALIDATION"},
+		{"cambio de RQ con 11 RQ", ContractOpInput{Type: OpRQChange, Date: end, RequirementIDs: elevenIDs()}, "VALIDATION"},
 		{"cambio de RQ ok", ContractOpInput{Type: OpRQChange, Date: end, RequirementID: u1}, ""},
 		{"tipo desconocido", ContractOpInput{Type: "CLOSE"}, "VALIDATION"},
 	}
 	for _, c := range cases {
 		in := c.in
-		if got := code(in.validate(start, end)); got != c.want {
+		if got := code(in.validate(start, end, uArea)); got != c.want {
 			t.Errorf("%s: %q, se esperaba %q", c.name, got, c.want)
 		}
 	}
-	in := ContractOpInput{Type: "renew", EndDate: "2027-06-30", Reason: " Extensión ", Position: "x", ClientID: u1}
-	if err := in.validate(start, end); err != nil || in.Type != OpRenew || in.Reason != "Extensión" || in.Position != "" || in.ClientID != "" {
+	in := ContractOpInput{Type: "renew", EndDate: "2027-06-30", Reason: " Extensión ", Position: "x", AreaID: u1}
+	if err := in.validate(start, end, uArea); err != nil || in.Type != OpRenew || in.Reason != "Extensión" || in.Position != "" || in.AreaID != "" {
 		t.Fatalf("renovar deja solo lo suyo: %+v %v", in, err)
 	}
-	tr := ContractOpInput{Type: OpTransfer, Date: end, ClientID: u1, AreaID: u1, Position: "QA", Schedule: "L-V", Indefinite: true, EndDate: "2027-01-01", NewUsername: "x"}
-	if err := tr.validate(start, end); err != nil || tr.EndDate != "" || tr.NewUsername != "" {
+	rqm := ContractOpInput{Type: OpRQChange, Date: end, RequirementID: u1, RequirementIDs: []string{uArea, u1}}
+	if err := rqm.validate(start, end, uArea); err != nil || strings.Join(rqm.RequirementIDs, ",") != u1+","+uArea || rqm.RequirementID != "" {
+		t.Fatalf("cambio de RQ múltiple: %+v %v", rqm, err)
+	}
+	tr := ContractOpInput{Type: OpTransfer, Date: end, AreaID: u1, Position: "QA", Schedule: "L-V", Indefinite: true, EndDate: "2027-01-01", NewUsername: "x"}
+	if err := tr.validate(start, end, uArea); err != nil || tr.EndDate != "" || tr.NewUsername != "" {
 		t.Fatalf("traspaso indeterminado sin credenciales: %+v %v", tr, err)
 	}
+}
+
+const uArea = "22222222-2222-4222-8222-222222222222"
+
+func elevenIDs() []string {
+	out := []string{}
+	for i := 0; i < 11; i++ {
+		out = append(out, fmt.Sprintf("33333333-3333-4333-8333-%012d", i))
+	}
+	return out
 }
 
 func terminateOp() *contractOpData {
@@ -178,14 +198,16 @@ func TestTerminationMails(t *testing.T) {
 	if _, html, _ := buildContractMail("FMI", "TERMINATED", op, c, ""); strings.Contains(html, "Recuperar laptop") || !strings.Contains(html, "No se requiere recuperar equipo.") {
 		t.Fatalf("sin equipo: %s", html)
 	}
-	rq := &contractOpData{Type: OpRQChange, Input: ContractOpInput{Date: "2026-12-31"}, Before: op.Before, Labels: opLabels{RQCode: "RQ-000300", RQTitle: "QA", RQClient: "Interbank"}}
+	rq := &contractOpData{Type: OpRQChange, Input: ContractOpInput{Date: "2026-12-31"}, Before: op.Before, Labels: opLabels{RQCode: "RQ-000300", RQTitle: "QA", RQClient: "Interbank",
+		RQs: []rqLabel{{Code: "RQ-000300", Title: "QA", Client: "Interbank"}, {Code: "RQ-000301", Title: "Dev", Client: "BCP"}}}}
 	subj, html, _ = buildContractMail("NOTICE", "RQ_CHANGE", rq, c, "Fiorella")
-	if subj != "Gestionar ingreso en BDT: Ana Victoria Fernandez Bueno → RQ-000300" || !strings.Contains(html, "gestionar en BDT el ingreso") {
+	if subj != "Gestionar ingreso en BDT: Ana Victoria Fernandez Bueno → RQ-000300, RQ-000301" || !strings.Contains(html, "gestionar en BDT el ingreso") ||
+		!strings.Contains(html, ">RQ-000301<") || !strings.Contains(html, ">BCP<") {
 		t.Fatalf("aviso de cambio de RQ: %s\n%s", subj, html)
 	}
 	tr := &contractOpData{Type: OpTransfer, Input: ContractOpInput{Date: "2027-01-01", Position: "Analista", Schedule: "L-V", ModifyCredentials: true, NewEmail: "ana@interbank.pe"},
-		Before: op.Before, Labels: opLabels{Client: "Interbank", Area: "Operaciones"}, Users: op.Users}
-	if subj, _, _ := buildContractMail("FMI", "TRANSFERRED", tr, c, ""); subj != "Traspaso de colaborador | RQ-000208 | BANBIF → Interbank" {
+		Before: op.Before, Labels: opLabels{Area: "Operaciones"}, Users: op.Users}
+	if subj, _, _ := buildContractMail("FMI", "TRANSFERRED", tr, c, ""); subj != "Traspaso de área | RQ-000208 | BANBIF" {
 		t.Fatalf("traspaso: %s", subj)
 	}
 	if subj, html, _ := buildContractMail("USERS", "TRANSFERRED", tr, c, ""); subj != "Solicitud de modificación de usuario: BANBIF - RQ-000208" || !strings.Contains(html, "ana@interbank.pe") {
@@ -214,9 +236,10 @@ func TestTerminationPDF(t *testing.T) {
 		t.Fatalf("baja de credenciales: %+v", us.Users)
 	}
 	tr := &contractOpData{Type: OpTransfer, Input: ContractOpInput{Date: "2027-01-01", Position: "Analista", Schedule: "L-V 8-5", EndDate: "2027-06-30"},
-		Before: op.Before, Labels: opLabels{Client: "Interbank", Area: "Operaciones"}}
+		Before: op.Before, Labels: opLabels{Area: "Operaciones", Site: "Sede Miraflores", Currency: "PEN"},
+		PayEnc: "x", newPay: &Pay{Base: 4200}}
 	mv := contractPrint("FMI", c, tr)
-	if mv.FMI.MoveClient != "Interbank" || mv.FMI.MovePosition != "Analista" || mv.FMI.MoveArea != "Operaciones" || mv.FMI.MoveDate != "01/01/2027" ||
+	if mv.FMI.MoveSite != "Sede Miraflores" || mv.FMI.MoveBase != "S/.4,200.00" || !mv.FMI.MoveHasBase || mv.FMI.MoveClient != "" || mv.FMI.MovePosition != "Analista" || mv.FMI.MoveArea != "Operaciones" || mv.FMI.MoveDate != "01/01/2027" ||
 		!strings.Contains(mv.FMI.Notes, "30/06/2027") {
 		t.Fatalf("FMI de movimiento: %+v", mv.FMI)
 	}
@@ -254,5 +277,37 @@ func TestReminderMailContracts(t *testing.T) {
 	if subj, _, _ := buildReminderMail(ports.ReminderTenant{Slug: "fractal", Company: "Fractal"}, u, ""); !strings.HasPrefix(subj, "Solicitudes de ingreso pendientes: 1") ||
 		!strings.Contains(subj, " · Contratos por terminar: 2") {
 		t.Fatalf("asunto combinado: %s", subj)
+	}
+}
+
+func TestScheduledTerminationMails(t *testing.T) {
+	c := mailCtx()
+	op := terminateOp()
+	op.Scheduled = true
+	_, html, _ := buildContractMail("FMI", "TERMINATED", op, c, "")
+	if !strings.Contains(html, "Baja programada: se hace efectiva el 31/12/2026.") {
+		t.Fatalf("baja programada: %s", html)
+	}
+	if _, html, _ := buildContractMail("USERS", "TERMINATED", op, c, ""); !strings.Contains(html, "Baja programada") {
+		t.Fatalf("credenciales programadas: %s", html)
+	}
+	op.change = &opChange{From: "2026-12-31", To: "2027-01-15", Reason: "El cliente extendió una quincena"}
+	op.Input.Date = "2027-01-15"
+	subj, html, _ := buildContractMail("RECOVERY", "RESCHEDULED", op, c, "")
+	if subj != "Cambio de fecha - Solicitud de recuperación de equipo: BANBIF - RQ-000208" ||
+		!strings.Contains(html, "Se cambió la fecha de cese del 31/12/2026 al 15/01/2027. Motivo: El cliente extendió una quincena.") {
+		t.Fatalf("cambio de fecha: %s\n%s", subj, html)
+	}
+	op.change = &opChange{From: "2027-01-15", Reason: "Se renovó el servicio"}
+	subj, html, _ = buildContractMail("FMI", "OP_CANCELLED", op, c, "Fiorella")
+	if subj != "Anulado - Baja de colaborador | RQ-000208 | BANBIF" || !strings.Contains(html, "Se anuló la baja programada") ||
+		!strings.Contains(html, "15/01/2027") || !strings.Contains(html, "Se renovó el servicio") {
+		t.Fatalf("anulación: %s\n%s", subj, html)
+	}
+	if got := pendingForms([]string{"FMI"}, false, false); len(got) != 0 {
+		t.Fatalf("con credenciales no se pide la ficha de usuarios: %v", got)
+	}
+	if got := pendingForms(nil, true, false); strings.Join(got, ",") != "FMI,EQUIPMENT" {
+		t.Fatalf("reingreso con equipo: %v", got)
 	}
 }

@@ -29,6 +29,7 @@ type SelectionService struct {
 	Storage  ports.FileStorage  // logo de las fichas
 	Files    ports.FileRepository
 	AppURL   string
+	Env      string // local | staging | preprod | production (la rutina de bajas programadas solo simula fechas fuera de producción)
 }
 
 // SelectionRoles: roles que reciben los avisos de solicitudes de ingreso.

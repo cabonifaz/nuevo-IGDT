@@ -82,6 +82,7 @@ BEGIN
    WHERE x.id = v_hire;
   -- equipo entregado según la ficha de equipo aprobada; un cambio de RQ pendiente del colaborador queda completado
   CALL sp_employee_equipment_sync(v_hire, p_actor_id);
+  CALL sp_employee_credential_sync(v_req, p_actor_id);
   UPDATE hire_contract_op o JOIN hire px ON px.id = o.hire_id SET o.status = 'COMPLETED'
    WHERE px.employee_id = v_emp AND px.id <> v_hire AND o.type = 'RQ_CHANGE' AND o.status = 'REQUESTED';
   CALL sp_hire_recompute(v_req);

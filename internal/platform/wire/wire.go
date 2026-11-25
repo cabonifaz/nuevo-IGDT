@@ -81,7 +81,7 @@ func Build(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, erro
 		Version: release.Version(), Commit: cfg.CommitSHA, Notes: release.Notes(release.Version()), Peers: app.ParsePeers(cfg.EnvURLs)}
 	go versions.Register(context.Background())
 	selection := &app.SelectionService{Repo: mysql.SelectionRepo{Store: store}, Cipher: cipher, Notifier: notifications, Features: features,
-		Renderer: forms.Renderer{}, Mail: mail, BDT: bdt.New(cfg.BDTAPIURL), AppURL: cfg.PublicAppURL, Storage: files, Files: fileRepo}
+		Renderer: forms.Renderer{}, Mail: mail, BDT: bdt.New(cfg.BDTAPIURL), AppURL: cfg.PublicAppURL, Storage: files, Files: fileRepo, Env: cfg.Env}
 	if cfg.HireReminders {
 		go selection.RunReminders(ctx) // avisos diarios y correos de solicitudes de ingreso pendientes
 	}

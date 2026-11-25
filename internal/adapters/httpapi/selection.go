@@ -33,6 +33,7 @@ func (s *Server) selectionRoutes(r chi.Router) {
 	r.With(write, feat).Post("/hire-requests/{id}/contract-ops", s.selContractOp)
 	r.With(write, feat).Post("/hire-requests/{id}/contract-ops/preview/{form}", s.selContractPreview)
 	r.With(write, feat).Post("/hire-requests/{id}/contract-ops/{opId}/resend", s.selContractResend)
+	r.With(write, feat).Patch("/hire-requests/{id}/contract-ops/{opId}", s.selContractOpChange)
 	r.With(read, feat).Get("/client-managers", s.selClientManagers)
 	r.With(s.requirePerm("client.managers.manage"), feat).Put("/client-managers/{clientId}", s.selSetClientManagers)
 	r.With(s.requirePerm("client.managers.manage"), feat).Get("/client-manager-candidates", s.selClientManagerCandidates)

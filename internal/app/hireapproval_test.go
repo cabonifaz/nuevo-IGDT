@@ -13,10 +13,10 @@ func TestDueStateAndPending(t *testing.T) {
 			t.Errorf("%q: %s, se esperaba %s", in, got, want)
 		}
 	}
-	if got := pendingForms([]string{"USERS"}, true); strings.Join(got, ",") != "FMI,EQUIPMENT" {
+	if got := pendingForms([]string{"USERS"}, true, true); strings.Join(got, ",") != "FMI,EQUIPMENT" {
 		t.Errorf("pendientes: %v", got)
 	}
-	if got := pendingForms([]string{"FMI", "USERS"}, false); len(got) != 0 {
+	if got := pendingForms([]string{"FMI", "USERS"}, false, true); len(got) != 0 {
 		t.Errorf("sin equipo: %v", got)
 	}
 }
