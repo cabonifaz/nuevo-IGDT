@@ -77,6 +77,8 @@ type bdtConditions struct {
 	Emo          bool   `json:"emo"`
 	Sctr         bool   `json:"sctr"`
 	Laptop       bool   `json:"laptop"`
+	// StartDate: fecha tentativa de inicio que registra Selección al confirmar (BDT 1.15), YYYY-MM-DD
+	StartDate string `json:"startDate,omitempty"`
 }
 
 // BDTRequirement: snapshot de un RQ tal como lo envía BDT.
@@ -354,6 +356,9 @@ func (s *SelectionService) hireWrite(h *BDTHire) (ports.HireWrite, error) {
 	w.DocTypeCode, w.DocTypeLabel = t.DocType.Code, t.DocType.Label
 	w.ClientID, w.ClientLabel, w.ProfileID, w.ProfileLabel = h.Client.ID, h.Client.Label, h.Vacancy.Profile.ID, h.Vacancy.Profile.Label
 	w.ConfirmedAt = h.ConfirmedAt
+	if h.Conditions.StartDate != "" && !validDate(h.Conditions.StartDate) {
+		h.Conditions.StartDate = "" // fecha tentativa inválida: se ignora (el gestor la completa en la FMI)
+	}
 	confirmedBy := strings.TrimSpace(h.ConfirmedByName)
 	if confirmedBy == "" {
 		confirmedBy = strings.TrimSpace(h.ConfirmedBy)

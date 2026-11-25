@@ -56,7 +56,7 @@ func Build(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, erro
 		ports.Mailer
 		ports.MailSender
 	} = mailer.LogMailer{Log: log}
-	if rs := (mailer.Resend{Key: cfg.ResendAPIKey, From: cfg.MailFrom, FromName: cfg.MailFromName}); rs.Enabled() {
+	if rs := (mailer.Resend{Key: cfg.ResendAPIKey, From: cfg.MailFrom, FromName: cfg.MailFromName, RedirectTo: cfg.MailRedirectTo}); rs.Enabled() {
 		mail = rs // Resend (API HTTP) tiene prioridad sobre SMTP
 	} else if smtp := (mailer.SMTP{Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser, Password: cfg.SMTPPassword,
 		From: cfg.SMTPFrom, FromName: cfg.SMTPFromName}); smtp.Enabled() {

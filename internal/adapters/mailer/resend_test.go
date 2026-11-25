@@ -50,3 +50,19 @@ func TestDeliverable(t *testing.T) {
 		t.Fatalf("solo dominios de prueba: %v", err)
 	}
 }
+
+func TestResendRedirect(t *testing.T) {
+	var got resendEmail
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+	}))
+	defer srv.Close()
+	r := Resend{Key: "k", From: "f@empresa.pe", RedirectTo: "qa@empresa.pe", BaseURL: srv.URL}
+	if err := r.Send(context.Background(), ports.Mail{To: []string{"a@fractal.test"}, Cc: []string{"b@x.pe"}, Subject: "S", Text: "T", HTML: "<p>T</p>"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.To) != 1 || got.To[0] != "qa@empresa.pe" || len(got.Cc) != 0 || got.Subject != "[STAGING] S" ||
+		!strings.Contains(got.Text, "Destinatario original: a@fractal.test · Copia: b@x.pe") || !strings.Contains(got.HTML, "Destinatario original") {
+		t.Fatalf("redirección: %+v", got)
+	}
+}

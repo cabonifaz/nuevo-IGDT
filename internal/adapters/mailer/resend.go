@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"strings"
@@ -19,8 +20,10 @@ import (
 // remitente (MAIL_FROM) debe ser de un dominio verificado en Resend.
 type Resend struct {
 	Key, From, FromName string
-	BaseURL             string // por defecto https://api.resend.com (las pruebas lo cambian)
-	HTTP                *http.Client
+	// RedirectTo: en staging todo correo va solo a esta dirección (con los destinatarios originales en el texto)
+	RedirectTo string
+	BaseURL    string // por defecto https://api.resend.com (las pruebas lo cambian)
+	HTTP       *http.Client
 }
 
 func (r Resend) Enabled() bool { return r.Key != "" && r.From != "" }
@@ -61,6 +64,19 @@ func (r Resend) Send(ctx context.Context, m ports.Mail) error {
 	cc, err := cleanAddrs(m.Cc)
 	if err != nil {
 		return err
+	}
+	if r.RedirectTo != "" {
+		orig := strings.Join(to, ", ")
+		if len(cc) > 0 {
+			orig += " · Copia: " + strings.Join(cc, ", ")
+		}
+		note := "Destinatario original: " + orig
+		m.Subject = "[STAGING] " + m.Subject
+		m.Text = note + "\n\n" + m.Text
+		if m.HTML != "" {
+			m.HTML = `<p style="font-family:Arial,sans-serif;font-size:12px;background:#FFF4E5;border:1px solid #F5B041;padding:6px">` + html.EscapeString(note) + "</p>" + m.HTML
+		}
+		to, cc = []string{r.RedirectTo}, nil
 	}
 	to, cc = deliverable(to), deliverable(cc)
 	if len(to) == 0 && len(cc) > 0 {

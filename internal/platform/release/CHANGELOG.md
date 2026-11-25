@@ -3,6 +3,10 @@
 Formato: `## vMAYOR.MENOR — AAAA-MM-DD`, seguido de los cambios en viñetas (español). Al publicar una versión se
 sube `VERSION` y se agrega su sección aquí: la API la registra al desplegarse en cada ambiente y la notifica.
 
+## v0.11 — 2026-11-25
+- La fecha tentativa de inicio que Selección registra en BDT al confirmar llega con la solicitud: se propone en la FMI y sirve para avisar las solicitudes por vencer desde que llegan.
+- En staging, todos los correos de prueba van a una sola dirección configurada, con los destinatarios originales indicados en el correo.
+
 ## v0.10 — 2026-11-25
 - Aprobación de ingresos por ficha: cada cliente tiene un gestor principal y uno secundario (los asigna el administrador en Clientes). Cualquiera de los dos, o un administrador, edita y aprueba cada ficha por separado: ingreso (FMI), usuarios y, si aplica, equipo. La de equipo requiere la de usuarios aprobada. Ya no hace falta tomar la solicitud.
 - Cada ficha se envía por correo al aprobarla, con el formato de los correos del FMI: la FMI a los solicitantes (quien confirmó en BDT y el analista del RQ) con copia a Talento; usuarios y equipo a Soporte con copia a los solicitantes; y siempre las copias fijas. Se configuran en Administración › Fichas de ingreso.
